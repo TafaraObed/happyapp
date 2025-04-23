@@ -1,4 +1,4 @@
-package all=com.tafaramuzata.studyplanner
+package com.tafaramuzata.studyplanner
 
 import io.flutter.embedding.android.FlutterActivity
 

@@ -14,7 +14,94 @@ import 'models/schedule_entry.dart'; // Import ScheduleEntry model
 import 'models/task.dart'; // Import Task model
 import 'providers/theme_provider.dart'; // Import ThemeProvider
 import 'providers/settings_provider.dart'; // Import SettingsProvider
+import 'package:uuid/uuid.dart'; // Keep for non-sample data ID generation
 // Import SettingsScreen later
+
+// --- Sample Data Definition ---
+
+// Use simple hardcoded IDs for samples
+final String _sampleCourse1Id = 'sample_cs101';
+final String _sampleCourse2Id = 'sample_math202';
+final String _sampleCourse3Id = 'sample_hist150';
+
+final List<Course> _sampleCourses = [
+  Course(
+    id: _sampleCourse1Id,
+    name: 'Introduction to Programming',
+    professor: 'Dr. Grace Hopper',
+    room: 'Comp Sci Bldg 101',
+    schedule: [
+      ScheduleEntry(day: DayOfWeek.monday, time: const TimeOfDay(hour: 10, minute: 0)),
+      ScheduleEntry(day: DayOfWeek.wednesday, time: const TimeOfDay(hour: 10, minute: 0)),
+      ScheduleEntry(day: DayOfWeek.friday, time: const TimeOfDay(hour: 10, minute: 0)),
+    ],
+    color: Colors.teal.value,
+    notesLink: 'https://example.com/notes/cs101',
+  ),
+  Course(
+    id: _sampleCourse2Id,
+    name: 'Calculus I',
+    professor: 'Dr. Leonhard Euler',
+    room: 'Math Hall 305',
+    schedule: [
+      ScheduleEntry(day: DayOfWeek.tuesday, time: const TimeOfDay(hour: 13, minute: 0)),
+      ScheduleEntry(day: DayOfWeek.thursday, time: const TimeOfDay(hour: 13, minute: 0)),
+    ],
+    color: Colors.orange.value,
+    materialsLink: 'https://example.com/materials/math202',
+  ),
+    Course(
+    id: _sampleCourse3Id,
+    name: 'World History: Ancient Civilizations',
+    professor: 'Dr. Herodotus',
+    room: 'History Wing 210',
+    schedule: [
+      ScheduleEntry(day: DayOfWeek.monday, time: const TimeOfDay(hour: 14, minute: 30)),
+      ScheduleEntry(day: DayOfWeek.wednesday, time: const TimeOfDay(hour: 14, minute: 30)),
+    ],
+    color: Colors.purple.value,
+  ),
+];
+
+final List<Task> _sampleTasks = [
+  Task(
+    title: 'Assignment 1: Basic Algorithms',
+    courseId: _sampleCourse1Id,
+    dueDate: DateTime.now().add(const Duration(days: 7)),
+  ),
+  Task(
+    title: 'Read Chapter 3: Functions',
+    courseId: _sampleCourse1Id,
+    dueDate: DateTime.now().add(const Duration(days: 4)),
+    isComplete: true, // Example of a completed task
+  ),
+  Task(
+    title: 'Problem Set 1: Limits',
+    courseId: _sampleCourse2Id,
+    dueDate: DateTime.now().add(const Duration(days: 6)),
+  ),
+  Task(
+    title: 'Watch Khan Academy: Derivatives',
+    courseId: _sampleCourse2Id,
+    // No due date
+  ),
+   Task(
+    title: 'Essay Outline: Mesopotamia',
+    courseId: _sampleCourse3Id,
+     dueDate: DateTime.now().add(const Duration(days: 10)),
+  ),
+   Task(
+    title: 'Map Quiz Practice',
+    courseId: _sampleCourse3Id,
+     dueDate: DateTime.now().add(const Duration(days: 3)),
+  ),
+  Task(
+    title: 'Prepare Midterm Study Guide', // Not linked to a course
+     dueDate: DateTime.now().add(const Duration(days: 21)),
+  )
+];
+
+// --- End Sample Data Definition ---
 
 void main() {
   // Use MultiProvider to provide both ThemeProvider and SettingsProvider
@@ -180,31 +267,67 @@ class _MainScreenState extends State<MainScreen> {
 
   Future<void> _loadData() async {
     final prefs = await SharedPreferences.getInstance();
-    setState(() {
-      // Load Courses
-      final coursesJsonString = prefs.getString(_coursesKey);
-      if (coursesJsonString != null) {
+    bool dataLoadedFromPrefs = false;
+
+    // Try loading courses
+    final coursesJsonString = prefs.getString(_coursesKey);
+    if (coursesJsonString != null) {
+      try {
         final List<dynamic> coursesJson = jsonDecode(coursesJsonString);
         _courses = coursesJson.map((json) => Course.fromJson(json)).toList();
+        dataLoadedFromPrefs = true; // Mark if courses were loaded
+      } catch (e) {
+        print("Error decoding courses: $e");
+        // Consider clearing the invalid key: await prefs.remove(_coursesKey);
       }
-      // Load Tasks
-      final tasksJsonString = prefs.getString(_tasksKey);
-      if (tasksJsonString != null) {
+    }
+
+    // Try loading tasks
+    final tasksJsonString = prefs.getString(_tasksKey);
+    if (tasksJsonString != null) {
+       try {
         final List<dynamic> tasksJson = jsonDecode(tasksJsonString);
         _tasks = tasksJson.map((json) => Task.fromJson(json)).toList();
-      }
-      _isLoading = false; // Data loaded
-    });
+         // We only consider prefs loaded if BOTH courses and tasks had *some* data,
+         // but primarily base the sample data load on courses being empty.
+       } catch (e) {
+         print("Error decoding tasks: $e");
+         // Consider clearing the invalid key: await prefs.remove(_tasksKey);
+       }
+    }
+
+    // If NO courses were loaded from prefs, assume first launch or cleared data
+    // and load sample data.
+    if (!dataLoadedFromPrefs && _courses.isEmpty) {
+      print("No existing course data found. Loading sample data...");
+      _courses = List.from(_sampleCourses); // Use copies
+      _tasks = List.from(_sampleTasks);
+      // Immediately save the sample data back to preferences
+      await _saveData(); 
+      print("Sample data loaded and saved.");
+    }
+
+    // Ensure widget is still mounted before calling setState
+     if (mounted) {
+      setState(() {
+        _isLoading = false; // Data loading finished
+      });
+    }
   }
 
   Future<void> _saveData() async {
-    final prefs = await SharedPreferences.getInstance();
-    // Save Courses
-    final coursesJsonString = jsonEncode(_courses.map((c) => c.toJson()).toList());
-    await prefs.setString(_coursesKey, coursesJsonString);
-    // Save Tasks
-    final tasksJsonString = jsonEncode(_tasks.map((t) => t.toJson()).toList());
-    await prefs.setString(_tasksKey, tasksJsonString);
+     if (_isLoading) return; // Avoid saving during initial load if sample data is being added
+     final prefs = await SharedPreferences.getInstance();
+     try {
+       final coursesJsonString = jsonEncode(_courses.map((c) => c.toJson()).toList());
+       await prefs.setString(_coursesKey, coursesJsonString);
+       final tasksJsonString = jsonEncode(_tasks.map((t) => t.toJson()).toList());
+       await prefs.setString(_tasksKey, tasksJsonString);
+     } catch (e) {
+       print("Error saving data: $e");
+       // Maybe show a SnackBar to the user
+       _showSnackBar("Error saving data. Please try again.");
+     }
   }
 
   // --- Helper for showing SnackBar ---
