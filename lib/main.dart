@@ -9,12 +9,15 @@ import 'screens/course_list_screen.dart'; // Import CourseListScreen
 import 'screens/task_list_screen.dart'; // Import TaskListScreen
 import 'screens/add_task_screen.dart'; // Import AddTaskScreen
 import 'screens/settings_screen.dart'; // Import SettingsScreen
+import 'screens/stats_screen.dart'; // Import StatsScreen
 import 'models/course.dart'; // Import Course model
 import 'models/schedule_entry.dart'; // Import ScheduleEntry model
 import 'models/task.dart'; // Import Task model
 import 'providers/theme_provider.dart'; // Import ThemeProvider
 import 'providers/settings_provider.dart'; // Import SettingsProvider
 import 'package:uuid/uuid.dart'; // Keep for non-sample data ID generation
+import 'models/time_log_entry.dart'; // Import TimeLogEntry
+import 'package:flutter/cupertino.dart'; // Import Cupertino library
 // Import SettingsScreen later
 
 // --- Sample Data Definition ---
@@ -35,7 +38,7 @@ final List<Course> _sampleCourses = [
       ScheduleEntry(day: DayOfWeek.wednesday, time: const TimeOfDay(hour: 10, minute: 0)),
       ScheduleEntry(day: DayOfWeek.friday, time: const TimeOfDay(hour: 10, minute: 0)),
     ],
-    color: Colors.teal.value,
+    color: 'F44336', // Red
     notesLink: 'https://example.com/notes/cs101',
   ),
   Course(
@@ -47,7 +50,7 @@ final List<Course> _sampleCourses = [
       ScheduleEntry(day: DayOfWeek.tuesday, time: const TimeOfDay(hour: 13, minute: 0)),
       ScheduleEntry(day: DayOfWeek.thursday, time: const TimeOfDay(hour: 13, minute: 0)),
     ],
-    color: Colors.orange.value,
+    color: '2196F3', // Blue
     materialsLink: 'https://example.com/materials/math202',
   ),
     Course(
@@ -59,7 +62,7 @@ final List<Course> _sampleCourses = [
       ScheduleEntry(day: DayOfWeek.monday, time: const TimeOfDay(hour: 14, minute: 30)),
       ScheduleEntry(day: DayOfWeek.wednesday, time: const TimeOfDay(hour: 14, minute: 30)),
     ],
-    color: Colors.purple.value,
+    color: '4CAF50', // Green
   ),
 ];
 
@@ -215,9 +218,9 @@ class StudyPlannerApp extends StatelessWidget {
            onSurface: Colors.white.withOpacity(0.87), // Common practice for dark themes
         );
 
-        return MaterialApp(
+    return MaterialApp(
           title: 'Study Planner',
-          theme: ThemeData(
+      theme: ThemeData(
             colorScheme: refinedLightColorScheme, // Use refined scheme
             useMaterial3: true, // Enabling Material 3 for modern components
             pageTransitionsTheme: pageTransitionsTheme, // Apply the custom theme
@@ -258,7 +261,7 @@ class _MainScreenState extends State<MainScreen> {
 
   // --- Course State & Methods ---
   List<Course> _courses = []; // Initialize empty course list
-  
+
   @override
   void initState() {
     super.initState();
@@ -342,7 +345,8 @@ class _MainScreenState extends State<MainScreen> {
 
   void _addCourse() async {
     final newCourse = await Navigator.of(context).push<Course>(
-      MaterialPageRoute(builder: (ctx) => const AddCourseScreen()),
+      // Use CupertinoPageRoute for iOS-style transition
+      CupertinoPageRoute(builder: (ctx) => const AddCourseScreen()),
     );
     if (newCourse != null) {
       setState(() {
@@ -355,7 +359,8 @@ class _MainScreenState extends State<MainScreen> {
 
   void _editCourse(Course courseToEdit) async {
     final updatedCourse = await Navigator.of(context).push<Course>(
-      MaterialPageRoute(builder: (ctx) => AddCourseScreen(initialCourse: courseToEdit)),
+      // Use CupertinoPageRoute for iOS-style transition
+      CupertinoPageRoute(builder: (ctx) => AddCourseScreen(initialCourse: courseToEdit)),
     );
     if (updatedCourse != null) {
       setState(() {
@@ -459,6 +464,27 @@ class _MainScreenState extends State<MainScreen> {
   }
   // --- End of Task State & Methods ---
 
+  // --- Time Logging Method ---
+  void _logTimeForTask(String taskId, Duration duration) {
+    final index = _tasks.indexWhere((task) => task.id == taskId);
+    if (index != -1) {
+      final task = _tasks[index];
+      final newLogEntry = TimeLogEntry(startTime: DateTime.now(), duration: duration);
+      // Create a new list with the added entry
+      final updatedTimeLog = List<TimeLogEntry>.from(task.timeLog)..add(newLogEntry);
+      
+      setState(() {
+        _tasks[index] = task.copyWith(timeLog: updatedTimeLog);
+         _saveData(); // Save after logging time
+      });
+       // Optional: Show confirmation SnackBar
+       final hours = duration.inHours;
+       final minutes = duration.inMinutes.remainder(60);
+       _showSnackBar('Logged ${hours}h ${minutes}m for "${task.title}".');
+    }
+  }
+  // --- End Time Logging Method ---
+
   void _onItemTapped(int index) {
     setState(() {
       _selectedIndex = index;
@@ -476,34 +502,50 @@ class _MainScreenState extends State<MainScreen> {
 
     // Build screens once data is loaded
     final List<Widget> screens = <Widget>[
+      // Use Keys for AnimatedSwitcher to properly differentiate widgets
       DashboardScreen(
+        key: const ValueKey('dashboard'),
         courses: _courses,
         tasks: _tasks,
         onToggleTaskComplete: _toggleTaskComplete,
       ),
       CourseListScreen(
+        key: const ValueKey('courses'),
         courses: _courses,
         onAdd: _addCourse,
         onEdit: _editCourse,
         onDelete: _deleteCourse,
       ),
       TaskListScreen(
+        key: const ValueKey('tasks'),
         tasks: _tasks,
         courses: _courses,
         onToggleTaskComplete: _toggleTaskComplete,
         onAddTask: _addTask,
         onEditTask: _editTask,
         onDeleteTask: _deleteTask,
+        onLogTime: _logTimeForTask, // Pass the new callback
       ),
-      // Replace placeholder with actual SettingsScreen
-      const SettingsScreen(), 
+      StatsScreen(
+         key: const ValueKey('stats'),
+         tasks: _tasks,
+         courses: _courses,
+      ),
+      SettingsScreen(key: const ValueKey('settings')),
     ];
 
     return Scaffold(
-      // The body displays the screen selected by the bottom nav bar
-      body: IndexedStack( // Use IndexedStack to keep screen state alive
-         index: _selectedIndex,
-         children: screens, // Use dynamically built list
+      // Replace IndexedStack with AnimatedSwitcher
+      body: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 300), // Adjust duration as needed
+        transitionBuilder: (Widget child, Animation<double> animation) {
+          // Use FadeTransition
+          return FadeTransition(
+            opacity: animation,
+            child: child,
+          );
+        },
+        child: screens[_selectedIndex], // The current screen based on index
       ),
       // Add the BottomNavigationBar
       bottomNavigationBar: BottomNavigationBar(
@@ -520,6 +562,11 @@ class _MainScreenState extends State<MainScreen> {
           BottomNavigationBarItem(
             icon: Icon(Icons.task_alt),
             label: 'Tasks',
+          ),
+          // Add Stats tab item
+          BottomNavigationBarItem(
+            icon: Icon(Icons.analytics_outlined), // Or Icons.bar_chart
+            label: 'Stats',
           ),
           // Add Settings tab item
           BottomNavigationBarItem(

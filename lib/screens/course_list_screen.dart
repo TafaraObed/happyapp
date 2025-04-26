@@ -4,6 +4,7 @@ import '../models/course.dart';
 import '../models/schedule_entry.dart';
 import 'add_course_screen.dart';
 import '../widgets/tap_scale_container.dart';
+import 'package:intl/intl.dart';
 
 // Changed to StatelessWidget and accepts data/callbacks
 class CourseListScreen extends StatelessWidget {
@@ -45,6 +46,15 @@ class CourseListScreen extends StatelessWidget {
               final scheduleString = course.schedule
                   .map((entry) => entry.format(context))
                   .join(', ');
+
+              // Build subtitle string
+              List<String> subtitleParts = [scheduleString];
+              if (course.manualGradePercent != null) {
+                final gradeString = NumberFormat("0.0%").format(course.manualGradePercent!);
+                subtitleParts.add('Grade: $gradeString (Manual)');
+              }
+              final subtitle = subtitleParts.join('  •  ');
+
               return TapScaleContainer(
                 child: Card(
                   margin: const EdgeInsets.only(bottom: 12.0),
@@ -53,7 +63,7 @@ class CourseListScreen extends StatelessWidget {
                   child: ListTile(
                     leading: CircleAvatar(backgroundColor: course.colorValue, radius: 15),
                     title: Text(course.name),
-                    subtitle: Text(scheduleString),
+                    subtitle: Text(subtitle),
                     trailing: PopupMenuButton<String>(
                       icon: const Icon(Icons.more_vert),
                       onSelected: (value) {

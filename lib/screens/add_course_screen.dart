@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart'; // Import for InputFormatters
 import '../models/course.dart'; // Assuming models folder is one level up
 import '../models/schedule_entry.dart'; // Import ScheduleEntry
 import 'package:uuid/uuid.dart'; // For generating unique IDs
@@ -19,6 +20,7 @@ class _AddCourseScreenState extends State<AddCourseScreen> {
   final _roomController = TextEditingController();
   final _materialsLinkController = TextEditingController();
   final _notesLinkController = TextEditingController();
+  final _manualGradeController = TextEditingController(); // Controller for manual grade
   late Color _selectedColor; // Keep this as Color for the picker UI
   late String _appBarTitle;
   late String _saveButtonText;
@@ -50,10 +52,15 @@ class _AddCourseScreenState extends State<AddCourseScreen> {
       _nameController.text = course.name;
       _professorController.text = course.professor ?? '';
       _roomController.text = course.room ?? '';
-      _selectedColor = Color(course.color); // Convert int to Color
+      // Convert hex string to Color
+      _selectedColor = Color(int.parse(course.color, radix: 16) | 0xFF000000);
       _materialsLinkController.text = course.materialsLink ?? '';
       _notesLinkController.text = course.notesLink ?? '';
       _scheduleEntries = List<ScheduleEntry>.from(course.schedule); // Copy list
+      // Initialize manual grade controller if editing and value exists
+      if (course.manualGradePercent != null) {
+        _manualGradeController.text = (course.manualGradePercent! * 100).toStringAsFixed(1);
+      }
       _appBarTitle = 'Edit Course';
       _saveButtonText = 'Update Course';
     } else {
@@ -75,6 +82,7 @@ class _AddCourseScreenState extends State<AddCourseScreen> {
     _roomController.dispose();
     _materialsLinkController.dispose();
     _notesLinkController.dispose();
+    _manualGradeController.dispose(); // Dispose the new controller
     super.dispose();
   }
 
@@ -88,15 +96,34 @@ class _AddCourseScreenState extends State<AddCourseScreen> {
     }
 
     if (_formKey.currentState!.validate()) {
+      // Parse manual grade
+      double? manualGradeValue;
+      final gradeText = _manualGradeController.text.trim();
+      if (gradeText.isNotEmpty) {
+        final parsedGrade = double.tryParse(gradeText);
+        // Basic check if parsing succeeded and within reasonable bounds (0-100)
+        if (parsedGrade != null && parsedGrade >= 0 && parsedGrade <= 100) {
+          manualGradeValue = parsedGrade / 100.0; // Store as 0.0 to 1.0
+        } else {
+          // If parsing fails or out of bounds, show error and stop saving
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Manual Grade must be a number between 0 and 100.')),
+          );
+          return; // Stop the save process
+        }
+      }
+
       final courseData = Course(
         id: _isEditing ? widget.initialCourse!.id : const Uuid().v4(),
         name: _nameController.text,
         professor: _professorController.text.isNotEmpty ? _professorController.text : null,
         room: _roomController.text.isNotEmpty ? _roomController.text : null,
         schedule: _scheduleEntries, // Use the list of ScheduleEntry objects
-        color: _selectedColor.value,
+        // Convert Color value to hex string (remove alpha)
+        color: _selectedColor.value.toRadixString(16).substring(2),
         materialsLink: _materialsLinkController.text.isNotEmpty ? _materialsLinkController.text : null,
         notesLink: _notesLinkController.text.isNotEmpty ? _notesLinkController.text : null,
+        manualGradePercent: manualGradeValue, // Use the parsed value (or null)
       );
 
       // Pop the screen and return the new/updated course
@@ -279,6 +306,34 @@ class _AddCourseScreenState extends State<AddCourseScreen> {
                   prefixIcon: Icon(Icons.link),
                 ),
                 keyboardType: TextInputType.url,
+              ),
+              const SizedBox(height: 16.0),
+              // --- Manual Grade Field ---
+              TextFormField(
+                controller: _manualGradeController,
+                decoration: const InputDecoration(
+                  labelText: 'Manual Grade (%)',
+                  hintText: 'e.g., 87.5',
+                  prefixIcon: Icon(Icons.percent),
+                ),
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                inputFormatters: [
+                  // Allow numbers, optional decimal point, and one decimal place
+                  FilteringTextInputFormatter.allow(RegExp(r'^\d{0,3}(\.\d{0,1})?$')),
+                ],
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return null; // Optional field
+                  }
+                  final number = double.tryParse(value);
+                  if (number == null) {
+                    return 'Please enter a valid number';
+                  }
+                  if (number < 0 || number > 100) {
+                    return 'Grade must be between 0 and 100';
+                  }
+                  return null;
+                },
               ),
               const SizedBox(height: 24.0),
               Text('Select Course Color:', style: Theme.of(context).textTheme.titleMedium),

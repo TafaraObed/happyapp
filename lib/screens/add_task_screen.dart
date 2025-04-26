@@ -3,6 +3,7 @@ import 'package:intl/intl.dart'; // For date formatting
 import 'package:uuid/uuid.dart';
 import '../models/task.dart';
 import '../models/course.dart'; // To select associated course
+import 'package:flutter/services.dart'; // For input formatters
 
 class AddTaskScreen extends StatefulWidget {
   final Task? initialTask; // Optional for editing
@@ -21,6 +22,9 @@ class AddTaskScreen extends StatefulWidget {
 class _AddTaskScreenState extends State<AddTaskScreen> {
   final _formKey = GlobalKey<FormState>();
   final _titleController = TextEditingController();
+  final _pointsEarnedController = TextEditingController();
+  final _pointsPossibleController = TextEditingController();
+  
   String? _selectedCourseId;
   DateTime? _selectedDueDate;
 
@@ -36,6 +40,8 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
       _titleController.text = task.title;
       _selectedCourseId = task.courseId;
       _selectedDueDate = task.dueDate;
+      _pointsEarnedController.text = task.pointsEarned?.toString() ?? '';
+      _pointsPossibleController.text = task.pointsPossible?.toString() ?? '';
       _appBarTitle = 'Edit Task';
       _saveButtonText = 'Update Task';
     } else {
@@ -47,6 +53,8 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
   @override
   void dispose() {
     _titleController.dispose();
+    _pointsEarnedController.dispose();
+    _pointsPossibleController.dispose();
     super.dispose();
   }
 
@@ -68,15 +76,32 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
   // --- Save Logic ---
   void _saveTask() {
     if (_formKey.currentState!.validate()) {
+      final double? pointsEarned = double.tryParse(_pointsEarnedController.text);
+      final double? pointsPossible = double.tryParse(_pointsPossibleController.text);
+
+      if (pointsEarned != null && (pointsPossible == null || pointsPossible <= 0)) {
+         ScaffoldMessenger.of(context).showSnackBar(
+           const SnackBar(content: Text('If Points Earned are entered, Points Possible must be a positive number.')),
+         );
+         return;
+      }
+      if (pointsEarned != null && pointsPossible != null && pointsEarned > pointsPossible) {
+        ScaffoldMessenger.of(context).showSnackBar(
+           const SnackBar(content: Text('Points Earned cannot exceed Points Possible.')),
+         );
+         return;
+      }
+
       final taskData = Task(
-        id: _isEditing ? widget.initialTask!.id : null, // Let constructor generate if new
+        id: _isEditing ? widget.initialTask!.id : null, 
         title: _titleController.text,
         courseId: _selectedCourseId,
         dueDate: _selectedDueDate,
-        // Retain completion status if editing, otherwise default (false)
         isComplete: _isEditing ? widget.initialTask!.isComplete : false, 
+        pointsEarned: pointsEarned,
+        pointsPossible: pointsPossible,
       );
-      Navigator.of(context).pop(taskData); // Return new/updated task
+      Navigator.of(context).pop(taskData);
     }
   }
 
@@ -162,6 +187,56 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
                    ),
                  ],
                ),
+              const SizedBox(height: 24.0),
+              
+              // --- Grade Inputs ---
+              Text('Grade (Optional)', style: Theme.of(context).textTheme.titleMedium),
+              const SizedBox(height: 8.0),
+              Row(
+                 crossAxisAlignment: CrossAxisAlignment.start, // Align validators top
+                 children: [
+                   Expanded(
+                     child: TextFormField(
+                       controller: _pointsEarnedController,
+                       decoration: const InputDecoration(
+                         labelText: 'Points Earned',
+                         prefixIcon: Icon(Icons.star_half_outlined),
+                       ),
+                       keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                       inputFormatters: [
+                          FilteringTextInputFormatter.allow(RegExp(r'^[0-9]+\.?[0-9]*')), // Allow digits and one dot
+                       ],
+                       // Basic validation - handled in _saveTask for dependency
+                     ),
+                   ),
+                   const SizedBox(width: 16.0),
+                    Expanded(
+                     child: TextFormField(
+                       controller: _pointsPossibleController,
+                       decoration: const InputDecoration(
+                         labelText: 'Points Possible',
+                          prefixIcon: Icon(Icons.star_outline),
+                       ),
+                       keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                       inputFormatters: [
+                          FilteringTextInputFormatter.allow(RegExp(r'^[0-9]+\.?[0-9]*')), 
+                       ],
+                      validator: (value) {
+                         // Only validate if points earned is also filled
+                         if (_pointsEarnedController.text.isNotEmpty && (value == null || value.isEmpty || double.tryParse(value) == 0)) {
+                           return 'Req if earned pts entered';
+                         }
+                         if (value != null && value.isNotEmpty && (double.tryParse(value) ?? -1) < 0) {
+                           return '>= 0';
+                         }
+                         return null;
+                       },
+                     ),
+                   ),
+                 ],
+              ),
+               // --- End Grade Inputs ---
+
               const SizedBox(height: 32.0),
               // Save Button (alternative placement)
               ElevatedButton.icon(
