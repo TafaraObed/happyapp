@@ -46,15 +46,18 @@ class AgendaItem {
 class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProviderStateMixin {
 
   // --- State for Calendar ---
-  CalendarFormat _calendarFormat = CalendarFormat.week; 
+  CalendarFormat _calendarFormat = CalendarFormat.week;
   DateTime _focusedDay = DateTime.now();
   DateTime? _selectedDay;
+
+  // PageController for the details popup PageView
+  PageController? _detailsPageController;
 
   List<AgendaItem> _getTodaysSchedule() {
     final now = DateTime.now();
     // DateTime.weekday: Monday = 1, Sunday = 7
     // DayOfWeek enum: monday = 0, sunday = 6
-    final today = DayOfWeek.values[now.weekday - 1]; 
+    final today = DayOfWeek.values[now.weekday - 1];
 
     List<AgendaItem> todaysAgenda = [];
 
@@ -109,14 +112,14 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
     }));
 
     // Return a list of Course/Task objects. TableCalendar just checks if it's non-empty.
-    return events; 
+    return events;
   }
 
   // --- Calculation Helpers ---
 
   List<Task> _getTasksDueToday() {
     final now = DateTime.now();
-    return widget.tasks.where((task) => 
+    return widget.tasks.where((task) =>
       task.dueDate != null && isSameDay(task.dueDate!, now)
     ).toList();
   }
@@ -128,15 +131,15 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
     // Monday = 1 -> index 0
     // Sunday = 7 -> index 6
     int startOffset = settingsProvider.startingDayOfWeek.index; // 0 for Monday, 6 for Sunday
-    final startOfWeekDate = now.subtract(Duration(days: (now.weekday - 1 - startOffset + 7) % 7)); 
+    final startOfWeekDate = now.subtract(Duration(days: (now.weekday - 1 - startOffset + 7) % 7));
     final endOfWeekDate = startOfWeekDate.add(const Duration(days: 6));
 
     return widget.tasks.where((task) {
       if (task.dueDate == null) return false;
       // Exclude today
-      if (isSameDay(task.dueDate!, now)) return false; 
+      if (isSameDay(task.dueDate!, now)) return false;
       // Check if due date is within the current week (inclusive start, inclusive end)
-      return !task.dueDate!.isBefore(startOfWeekDate) && 
+      return !task.dueDate!.isBefore(startOfWeekDate) &&
              !task.dueDate!.isAfter(endOfWeekDate);
     }).toList();
   }
@@ -144,9 +147,9 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
   List<Task> _getOverdueTasks() {
      final now = DateTime.now();
      // A task is overdue if it's not complete and its due date is before today (ignoring time)
-     return widget.tasks.where((task) => 
-       !task.isComplete && 
-       task.dueDate != null && 
+     return widget.tasks.where((task) =>
+       !task.isComplete &&
+       task.dueDate != null &&
        task.dueDate!.isBefore(DateTime(now.year, now.month, now.day))
      ).toList();
   }
@@ -161,6 +164,12 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
     settingsProvider = Provider.of<SettingsProvider>(context, listen: false);
   }
 
+   @override
+  void dispose() {
+    _detailsPageController?.dispose(); // Dispose the controller
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     final todaysSchedule = _getTodaysSchedule();
@@ -172,7 +181,7 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
     final tasksDueThisWeek = _getTasksDueThisWeek();
     final overdueTasks = _getOverdueTasks();
     final activeCoursesCount = widget.courses.length;
-    
+
     // Re-add these needed calculations
     final totalTasks = widget.tasks.length;
     final completedTasks = widget.tasks.where((task) => task.isComplete).length;
@@ -197,7 +206,7 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
                _buildSummaryCard(context, 'Courses Active', activeCoursesCount.toString(), Icons.book_outlined),
                _buildSummaryCard(context, 'Tasks Due Today', tasksDueToday.length.toString(), Icons.today_outlined),
                _buildSummaryCard(context, 'Due This Week', tasksDueThisWeek.length.toString(), Icons.date_range_outlined),
-               _buildSummaryCard(context, 'Overdue Tasks', overdueTasks.length.toString(), Icons.warning_amber_rounded, 
+               _buildSummaryCard(context, 'Overdue Tasks', overdueTasks.length.toString(), Icons.warning_amber_rounded,
                                  valueColor: overdueTasks.isNotEmpty ? theme.colorScheme.error : null),
              ],
            ),
@@ -208,13 +217,13 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
            const SizedBox(height: 12.0),
            Card(
              child: Padding(
-               padding: const EdgeInsets.only(bottom: 8.0), 
+               padding: const EdgeInsets.only(bottom: 8.0),
                // Wrap TableCalendar with AnimatedSize
                child: AnimatedSize(
                  duration: const Duration(milliseconds: 300),
                  curve: Curves.easeInOut,
                  child: TableCalendar(
-                    firstDay: DateTime.utc(2020, 1, 1),
+                    firstDay: DateTime.utc(2020, 1, 1), // Define reasonable range
                     lastDay: DateTime.utc(2030, 12, 31),
                     focusedDay: _focusedDay,
                     calendarFormat: _calendarFormat,
@@ -224,7 +233,7 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
                     },
                     onDaySelected: (selectedDay, focusedDay) {
                       // Always show the popup when a day is tapped
-                      _showDayDetailsPopup(selectedDay); 
+                      _showDayDetailsPopup(selectedDay);
 
                       // Only update state if the selected day has actually changed
                       if (!isSameDay(_selectedDay, selectedDay)) {
@@ -234,7 +243,7 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
                         });
                       } else {
                          // If the same day is tapped, we might still want to ensure it's focused
-                         // although TableCalendar might handle this already. 
+                         // although TableCalendar might handle this already.
                          // Adding it defensively.
                          if (!isSameDay(_focusedDay, focusedDay)) {
                             setState(() {
@@ -252,17 +261,22 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
                        }
                     },
                     onPageChanged: (focusedDay) {
-                      _focusedDay = focusedDay;
+                      // Only update state if mounted to avoid errors during dispose
+                      if (mounted) {
+                        setState(() {
+                           _focusedDay = focusedDay;
+                        });
+                      }
                     },
                     eventLoader: _getEventsForDay,
                     headerStyle: HeaderStyle(
                       // Show format button
-                      formatButtonVisible: true, 
+                      formatButtonVisible: true,
                       titleCentered: true,
                       titleTextStyle: textTheme.titleMedium ?? const TextStyle(),
                       // Optional: Customize format button text/icon
-                      // formatButtonTextStyle: ..., 
-                      // formatButtonDecoration: ..., 
+                      // formatButtonTextStyle: ...,
+                      // formatButtonDecoration: ...,
                       // formatButtonShowsNext: false, // default true
                     ),
                     calendarStyle: CalendarStyle(
@@ -286,7 +300,7 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
              ),
            ),
            const SizedBox(height: 24.0),
-           
+
            // --- Today's Agenda Section ---
           Text("Today's Agenda", style: textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold)),
            const SizedBox(height: 12.0),
@@ -313,7 +327,7 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
                       ),
                       title: Text(item.courseName),
                       trailing: Text(
-                         item.timeOfDay.format(context), 
+                         item.timeOfDay.format(context),
                          style: textTheme.bodyMedium?.copyWith(color: theme.colorScheme.primary),
                        ),
                       // Add onTap later if needed
@@ -339,7 +353,7 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
                  child: Padding(
                    padding: const EdgeInsets.symmetric(vertical: 8.0), // Add padding top/bottom
                    child: ListView.separated(
-                     shrinkWrap: true, 
+                     shrinkWrap: true,
                      physics: const NeverScrollableScrollPhysics(),
                      itemCount: widget.courses.length,
                      itemBuilder: (context, index) {
@@ -360,7 +374,7 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
                              const SizedBox(height: 6.0),
                              LinearProgressIndicator(
                                value: progress,
-                               backgroundColor: theme.colorScheme.surfaceVariant, 
+                               backgroundColor: theme.colorScheme.surfaceVariant,
                                valueColor: AlwaysStoppedAnimation<Color>(course.colorValue),
                                minHeight: 6, // Make the bar slightly thicker
                                borderRadius: BorderRadius.circular(3), // Rounded corners
@@ -449,12 +463,12 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
               },
               onDeleteTask: (taskId) { /* Decide how deleting works */
                  ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(content: Text('Delete Task Tapped (from filtered view)')));
-              }, 
+              },
               onLogTime: (taskId, duration) { /* Decide how logging works */
                  ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(content: Text('Log Time Tapped (from filtered view)')));
               },
               // Optionally add a specific title to the TaskListScreen
-              // appBarTitle: screenTitle, 
+              // appBarTitle: screenTitle,
             ),
           ),
         );
@@ -497,11 +511,11 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
   // --- Placeholder build methods for list sections ---
   // (These need to contain the actual list building logic from the original code)
   Widget _buildTodaysSchedule(BuildContext context, List<AgendaItem> schedule) {
-     if (schedule.isEmpty) {
+    if (schedule.isEmpty) {
       return const Center(child: Padding(padding: EdgeInsets.symmetric(vertical: 24.0), child: Text('Nothing scheduled for today.')));
     }
     // Replace with actual ListView.builder logic for schedule items
-    return Text('[Placeholder for Today\'s Schedule List]'); 
+    return Text("[Placeholder for Today's Schedule List]");
   }
 
   Widget _buildUpcomingTasks(BuildContext context) {
@@ -523,25 +537,14 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
     return Text('[Placeholder for Upcoming Tasks List - Needs ListView.builder implementation]');
   }
 
-  // --- Function to show day details pop-up ---
-  void _showDayDetailsPopup(DateTime selectedDate) {
-    final theme = Theme.of(context);
-    final textTheme = theme.textTheme;
+  // --- Function to show day details pop-up with Swiping ---
+  void _showDayDetailsPopup(DateTime initialSelectedDate) {
+     // Calculate initial page index based on a reasonable range (e.g., 1 year back, 1 year forward)
+     final today = DateTime.now();
+     final rangeStart = DateTime(today.year - 1, today.month, today.day);
+     final initialPageIndex = initialSelectedDate.difference(rangeStart).inDays;
 
-    // Filter tasks due on the selected date
-    final tasksDueOnDay = widget.tasks.where((task) {
-      return task.dueDate != null && isSameDay(task.dueDate!, selectedDate);
-    }).toList();
-
-    // Calculate total time logged for tasks due on that day
-    Duration totalTimeLoggedForDay = Duration.zero;
-    for (var task in tasksDueOnDay) {
-      totalTimeLoggedForDay += task.totalTimeSpent;
-    }
-    final timeLoggedString = '${totalTimeLoggedForDay.inHours}h ${totalTimeLoggedForDay.inMinutes.remainder(60)}m';
-
-    // --- TODO: Filter tasks completed on this day (requires Task model change) ---
-    // final tasksCompletedOnDay = widget.tasks.where(...).toList();
+     _detailsPageController = PageController(initialPage: initialPageIndex);
 
     showModalBottomSheet(
       context: context,
@@ -550,78 +553,137 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (ctx) {
-        return DraggableScrollableSheet(
-          expand: false,
-          initialChildSize: 0.4, // Start at 40% height
-          minChildSize: 0.2,   // Allow shrinking to 20%
-          maxChildSize: 0.6,   // Allow expanding to 60%
-          builder: (_, scrollController) => Container(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Header
-                  Center(
-                    child: Text(
-                      DateFormat.yMMMEd().format(selectedDate), // Format: e.g., Wed, Sep 28, 2023
-                      style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Center(
-                      child: Container( // Handle graphic
-                         width: 40, height: 4, 
-                         decoration: BoxDecoration(
-                           color: Colors.grey[300],
-                           borderRadius: BorderRadius.circular(10)
-                         )
-                      ),
-                  ),
-                  const SizedBox(height: 20),
+        // Use a stateful builder to manage the currently displayed date in the PageView
+        DateTime currentPageDate = initialSelectedDate;
 
-                  // Time Logged Section
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                       Text('Time Logged (for tasks due): ', style: textTheme.titleMedium),
-                       Text(timeLoggedString, style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
-                    ],
-                  ),
-                  const Divider(height: 24),
-
-                  // Tasks Due Section
-                  Text('Tasks Due:', style: textTheme.titleMedium),
-                  const SizedBox(height: 8),
-                  Expanded( // Make the list scrollable if it exceeds space
-                    child: tasksDueOnDay.isEmpty
-                        ? const Center(child: Text('No tasks due on this day.'))
-                        : ListView.builder(
-                            controller: scrollController, // Use the controller for scrolling
-                            itemCount: tasksDueOnDay.length,
-                            itemBuilder: (listCtx, index) {
-                              final task = tasksDueOnDay[index];
-                              return CheckboxListTile(
-                                title: Text(task.title,
-                                      style: task.isComplete
-                                          ? const TextStyle(decoration: TextDecoration.lineThrough, color: Colors.grey)
-                                          : null),
-                                value: task.isComplete,
-                                onChanged: (_) => widget.onToggleTaskComplete(task.id),
-                                dense: true,
-                                controlAffinity: ListTileControlAffinity.leading,
-                              );
-                            },
-                          ),
-                  ),
-
-                  // --- TODO: Add completed tasks section later ---
-
-                ],
-              ),
-            ),
+        return StatefulBuilder( // Add StatefulBuilder to manage currentPageDate
+          builder: (modalContext, setModalState) {
+             return DraggableScrollableSheet(
+               expand: false,
+               initialChildSize: 0.4, // Start at 40% height
+               minChildSize: 0.2,   // Allow shrinking to 20%
+               maxChildSize: 0.6,   // Allow expanding to 60%
+               builder: (_, scrollController) {
+                 return PageView.builder(
+                    controller: _detailsPageController,
+                    onPageChanged: (index) {
+                      // Update the date when the page changes
+                      final newDate = rangeStart.add(Duration(days: index));
+                      setModalState(() {
+                         currentPageDate = newDate;
+                      });
+                      // Update the main calendar focus/selection if desired
+                      // This requires passing a callback or using provider if state needs to lift up
+                       setState(() {
+                         _selectedDay = newDate;
+                         _focusedDay = newDate;
+                       });
+                    },
+                    itemBuilder: (pageCtx, pageIndex) {
+                       // Calculate the date for the current page
+                       final dateForPage = rangeStart.add(Duration(days: pageIndex));
+                       // Build the content for this specific date
+                       return _buildDayDetailsContent(pageCtx, dateForPage, scrollController);
+                    },
+                 );
+               }
+            );
+          }
         );
       },
+    ).whenComplete(() {
+      // Dispose controller when the sheet is closed
+      _detailsPageController?.dispose();
+      _detailsPageController = null;
+    });
+  }
+
+  // Helper widget to build the actual content for a given day in the popup
+  Widget _buildDayDetailsContent(BuildContext context, DateTime selectedDate, ScrollController scrollController) {
+    final theme = Theme.of(context);
+    final textTheme = theme.textTheme;
+
+    // Use a local StatefulBuilder to handle checkbox state updates *within* this page
+    return StatefulBuilder(
+      builder: (BuildContext context, StateSetter setPageContentState) {
+        // Recalculate data for the selected date
+        final tasksDueOnDay = widget.tasks.where((task) {
+          return task.dueDate != null && isSameDay(task.dueDate!, selectedDate);
+        }).toList();
+
+        Duration currentTotalTimeLoggedForDay = Duration.zero;
+        for (var task in tasksDueOnDay) {
+          currentTotalTimeLoggedForDay += task.totalTimeSpent;
+        }
+        final currentTimeLoggedString = '${currentTotalTimeLoggedForDay.inHours}h ${currentTotalTimeLoggedForDay.inMinutes.remainder(60)}m';
+
+        return Container(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Header
+              Center(
+                child: Text(
+                  DateFormat.yMMMEd().format(selectedDate),
+                  style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Center(
+                child: Container(
+                  width: 40, height: 4,
+                  decoration: BoxDecoration(
+                      color: Colors.grey[300],
+                      borderRadius: BorderRadius.circular(10)
+                  )
+                ),
+              ),
+              const SizedBox(height: 20),
+
+              // Time Logged Section
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text('Time Logged (for tasks due): ', style: textTheme.titleMedium),
+                  Text(currentTimeLoggedString, style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+                ],
+              ),
+              const Divider(height: 24),
+
+              // Tasks Due Section
+              Text('Tasks Due:', style: textTheme.titleMedium),
+              const SizedBox(height: 8),
+              Expanded(
+                child: tasksDueOnDay.isEmpty
+                    ? const Center(child: Text('No tasks due on this day.'))
+                    : ListView.builder(
+                        controller: scrollController,
+                        itemCount: tasksDueOnDay.length,
+                        itemBuilder: (listCtx, index) {
+                          final task = tasksDueOnDay[index];
+                          return CheckboxListTile(
+                            title: Text(task.title,
+                                  style: task.isComplete
+                                      ? const TextStyle(decoration: TextDecoration.lineThrough, color: Colors.grey)
+                                      : null),
+                            value: task.isComplete,
+                            onChanged: (_) {
+                              widget.onToggleTaskComplete(task.id);
+                              setPageContentState(() {}); // Update this specific page's content UI
+                            },
+                            dense: true,
+                            controlAffinity: ListTileControlAffinity.leading,
+                          );
+                        },
+                      ),
+              ),
+              // --- TODO: Add completed tasks section later ---
+            ],
+          ),
+        );
+      }
     );
   }
 } 
