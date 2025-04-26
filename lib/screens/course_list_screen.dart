@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:flutter/cupertino.dart'; // Import for CupertinoPageRoute
 import '../models/course.dart';
 import '../models/schedule_entry.dart';
 import 'add_course_screen.dart';
 import '../widgets/tap_scale_container.dart';
 import 'package:intl/intl.dart';
+import 'course_detail_screen.dart'; // Import the new detail screen
 
 // Changed to StatelessWidget and accepts data/callbacks
 class CourseListScreen extends StatelessWidget {
@@ -56,6 +58,15 @@ class CourseListScreen extends StatelessWidget {
               final subtitle = subtitleParts.join('  •  ');
 
               return TapScaleContainer(
+                onTap: () {
+                   // Navigate to Course Detail Screen
+                   Navigator.of(context).push(CupertinoPageRoute(
+                     builder: (ctx) => CourseDetailScreen(
+                       course: course,
+                       onEditCourse: onEdit, // Pass the edit callback
+                     ),
+                   ));
+                },
                 child: Card(
                   margin: const EdgeInsets.only(bottom: 12.0),
                   elevation: 1.0,

@@ -6,6 +6,8 @@ import '../models/course.dart'; // To look up course names
 import '../widgets/tap_scale_container.dart'; // Import the new widget
 import '../models/time_log_entry.dart'; // Import TimeLogEntry
 import 'package:flutter/services.dart'; // For input formatters
+import 'task_detail_screen.dart'; // Import the new detail screen
+import 'package:flutter/cupertino.dart'; // Import for CupertinoPageRoute
 
 class TaskListScreen extends StatelessWidget {
   final List<Task> tasks;
@@ -201,7 +203,15 @@ class TaskListScreen extends StatelessWidget {
 
               // Wrap the animated Card with TapScaleContainer
               return TapScaleContainer(
-                onTap: () => onToggleTaskComplete(task.id), // Trigger toggle on tap
+                onTap: () {
+                  Navigator.of(context).push(CupertinoPageRoute(
+                    builder: (ctx) => TaskDetailScreen(
+                      task: task,
+                      courses: courses, // Pass courses for lookup
+                      onEditTask: onEditTask, // Pass the edit callback
+                    ),
+                  ));
+                },
                 child: Card(
                   margin: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.0)),
