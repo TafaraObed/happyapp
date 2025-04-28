@@ -82,9 +82,10 @@ class CourseDetailScreen extends StatelessWidget {
         padding: const EdgeInsets.all(16.0),
         children: [
            Card(
-             elevation: 1.5,
+             elevation: 0.5,
+             margin: EdgeInsets.zero,
              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.0)),
-             color: course.colorValue.withOpacity(0.05), // Subtle background color
+             color: course.colorValue.withOpacity(0.05),
              child: Padding(
                padding: const EdgeInsets.all(16.0),
                child: Column(

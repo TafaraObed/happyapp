@@ -10,18 +10,19 @@ import '../providers/settings_provider.dart'; // Import SettingsProvider
 import 'package:intl/intl.dart'; // For date formatting
 import '../widgets/tap_scale_container.dart'; // Import for animations if needed elsewhere
 import '../screens/task_list_screen.dart'; // Import TaskListScreen
+import 'course_detail_screen.dart'; // Import Course Detail Screen
+import '../providers/tasks_provider.dart'; // <<< Add tasks provider import
+import '../utils/task_filter.dart'; // <<< Import TaskFilter
 
 // Convert to StatefulWidget
 class DashboardScreen extends StatefulWidget {
   final List<Course> courses;
-  final List<Task> tasks; // Add tasks parameter
-  final Function(String) onToggleTaskComplete; // Add callback parameter
+  final Function(Course) onEditCourse;
 
   const DashboardScreen({
     super.key,
     required this.courses,
-    required this.tasks, // Make required
-    required this.onToggleTaskComplete, // Make required
+    required this.onEditCourse,
   });
 
   @override
@@ -85,46 +86,42 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
   }
 
   // --- Helper to calculate progress ---
-  double _calculateCourseProgress(String courseId) {
-    final courseTasks = widget.tasks.where((task) => task.courseId == courseId).toList();
-    if (courseTasks.isEmpty) {
-      return 0.0; // Or 1.0 if you prefer (no tasks = 100% complete?)
-    }
+  double _calculateCourseProgress(BuildContext context, String courseId) {
+    final tasks = Provider.of<TasksProvider>(context, listen: false).tasks;
+    final courseTasks = tasks.where((task) => task.courseId == courseId).toList();
+    if (courseTasks.isEmpty) return 0.0;
     final completedTasks = courseTasks.where((task) => task.isComplete).length;
     return completedTasks / courseTasks.length;
   }
 
   // --- Event Loader for TableCalendar ---
-  List<Object> _getEventsForDay(DateTime day) {
+  List<Object> _getEventsForDay(BuildContext context, DateTime day) {
+    final tasks = Provider.of<TasksProvider>(context, listen: false).tasks;
     List<Object> events = [];
-
-    // Check for courses scheduled on this day of the week
     final dayOfWeek = DayOfWeek.values[day.weekday - 1];
     events.addAll(widget.courses.where((course) {
       return course.schedule.any((entry) => entry.day == dayOfWeek);
     }));
-
-    // Check for tasks due on this specific day
-    events.addAll(widget.tasks.where((task) {
+    events.addAll(tasks.where((task) {
       if (task.dueDate == null) return false;
-      // Compare year, month, and day only
       return isSameDay(task.dueDate!, day);
     }));
-
-    // Return a list of Course/Task objects. TableCalendar just checks if it's non-empty.
     return events;
   }
 
   // --- Calculation Helpers ---
 
-  List<Task> _getTasksDueToday() {
+  List<Task> _getTasksDueToday(BuildContext context) {
+    final tasks = Provider.of<TasksProvider>(context, listen: false).tasks;
     final now = DateTime.now();
-    return widget.tasks.where((task) =>
+    return tasks.where((task) =>
       task.dueDate != null && isSameDay(task.dueDate!, now)
     ).toList();
   }
 
-  List<Task> _getTasksDueThisWeek() {
+  List<Task> _getTasksDueThisWeek(BuildContext context) {
+    final tasks = Provider.of<TasksProvider>(context, listen: false).tasks;
+    final settingsProvider = Provider.of<SettingsProvider>(context, listen: false);
     final now = DateTime.now();
     final startOfWeek = now.subtract(Duration(days: now.weekday - settingsProvider.startingDayOfWeek.index)); // Assumes monday=0, sunday=6
     // Use index from StartingDayOfWeek enum provided by table_calendar
@@ -134,7 +131,7 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
     final startOfWeekDate = now.subtract(Duration(days: (now.weekday - 1 - startOffset + 7) % 7));
     final endOfWeekDate = startOfWeekDate.add(const Duration(days: 6));
 
-    return widget.tasks.where((task) {
+    return tasks.where((task) {
       if (task.dueDate == null) return false;
       // Exclude today
       if (isSameDay(task.dueDate!, now)) return false;
@@ -144,10 +141,11 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
     }).toList();
   }
 
-  List<Task> _getOverdueTasks() {
+  List<Task> _getOverdueTasks(BuildContext context) {
+     final tasks = Provider.of<TasksProvider>(context, listen: false).tasks;
      final now = DateTime.now();
      // A task is overdue if it's not complete and its due date is before today (ignoring time)
-     return widget.tasks.where((task) =>
+     return tasks.where((task) =>
        !task.isComplete &&
        task.dueDate != null &&
        task.dueDate!.isBefore(DateTime(now.year, now.month, now.day))
@@ -172,19 +170,20 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
 
   @override
   Widget build(BuildContext context) {
+    // Get tasks from provider here
+    final tasksProvider = Provider.of<TasksProvider>(context); // listen: true is default
+    final tasks = tasksProvider.tasks;
     final todaysSchedule = _getTodaysSchedule();
     final theme = Theme.of(context);
     final textTheme = theme.textTheme;
 
-    // --- Calculate All Stats ---
-    final tasksDueToday = _getTasksDueToday();
-    final tasksDueThisWeek = _getTasksDueThisWeek();
-    final overdueTasks = _getOverdueTasks();
+    // --- Recalculate stats using context ---
+    final tasksDueToday = _getTasksDueToday(context);
+    final tasksDueThisWeek = _getTasksDueThisWeek(context);
+    final overdueTasks = _getOverdueTasks(context);
     final activeCoursesCount = widget.courses.length;
-
-    // Re-add these needed calculations
-    final totalTasks = widget.tasks.length;
-    final completedTasks = widget.tasks.where((task) => task.isComplete).length;
+    final totalTasks = tasks.length;
+    final completedTasks = tasks.where((task) => task.isComplete).length;
 
     return Scaffold(
       appBar: AppBar(
@@ -216,6 +215,7 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
            Text("Weekly View", style: textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold)),
            const SizedBox(height: 12.0),
            Card(
+             elevation: 0.5,
              child: Padding(
                padding: const EdgeInsets.only(bottom: 8.0),
                // Wrap TableCalendar with AnimatedSize
@@ -233,7 +233,7 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
                     },
                     onDaySelected: (selectedDay, focusedDay) {
                       // Always show the popup when a day is tapped
-                      _showDayDetailsPopup(selectedDay);
+                      _showDayDetailsPopup(context, selectedDay);
 
                       // Only update state if the selected day has actually changed
                       if (!isSameDay(_selectedDay, selectedDay)) {
@@ -268,7 +268,7 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
                         });
                       }
                     },
-                    eventLoader: _getEventsForDay,
+                    eventLoader: (day) => _getEventsForDay(context, day),
                     headerStyle: HeaderStyle(
                       // Show format button
                       formatButtonVisible: true,
@@ -305,14 +305,15 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
           Text("Today's Agenda", style: textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold)),
            const SizedBox(height: 12.0),
            todaysSchedule.isEmpty
-            ? const Card( // Use a card for better visual separation
+            ? Card( // Use a card for better visual separation
+                elevation: 0.5, // Lower elevation
                 child: Padding(
                   padding: EdgeInsets.all(16.0),
                   child: Center(child: Text('Nothing scheduled for today! Enjoy your day.')),
                 ),
               )
             : Card(
-               // elevation: 1,
+                elevation: 0.5, // Lower elevation
                // clipBehavior: Clip.antiAlias, // Optional: ensures content respects rounded corners
                 child: ListView.separated(
                   shrinkWrap: true, // Important inside another ListView
@@ -349,6 +350,7 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
                 ),
               )
             : Card(
+                elevation: 0.5, // Lower elevation
                 // Build list of progress bars
                  child: Padding(
                    padding: const EdgeInsets.symmetric(vertical: 8.0), // Add padding top/bottom
@@ -358,28 +360,40 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
                      itemCount: widget.courses.length,
                      itemBuilder: (context, index) {
                        final course = widget.courses[index];
-                       final progress = _calculateCourseProgress(course.id);
-                       return Padding(
-                         padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
-                         child: Column(
-                           crossAxisAlignment: CrossAxisAlignment.start,
-                           children: [
-                             Row(
-                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                               children: [
-                                 Text(course.name, style: textTheme.titleMedium),
-                                 Text('${(progress * 100).toStringAsFixed(0)}%', style: textTheme.bodyMedium?.copyWith(color: theme.colorScheme.primary)),
-                               ],
-                             ),
-                             const SizedBox(height: 6.0),
-                             LinearProgressIndicator(
-                               value: progress,
-                               backgroundColor: theme.colorScheme.surfaceVariant,
-                               valueColor: AlwaysStoppedAnimation<Color>(course.colorValue),
-                               minHeight: 6, // Make the bar slightly thicker
-                               borderRadius: BorderRadius.circular(3), // Rounded corners
-                             ),
-                           ],
+                       final progress = _calculateCourseProgress(context, course.id);
+                       // Wrap with InkWell for tap detection
+                       return InkWell(
+                          onTap: () {
+                             Navigator.of(context).push(CupertinoPageRoute(
+                               builder: (ctx) => CourseDetailScreen(
+                                 course: course,
+                                 onEditCourse: widget.onEditCourse, // Use the callback from widget
+                               ),
+                             ));
+                          },
+                          borderRadius: BorderRadius.circular(8.0), // Optional: for ink splash shape
+                          child: Padding(
+                           padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+                           child: Column(
+                             crossAxisAlignment: CrossAxisAlignment.start,
+                             children: [
+                               Row(
+                                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                 children: [
+                                   Text(course.name, style: textTheme.titleMedium),
+                                   Text('${(progress * 100).toStringAsFixed(0)}%', style: textTheme.bodyMedium?.copyWith(color: theme.colorScheme.primary)),
+                                 ],
+                               ),
+                               const SizedBox(height: 6.0),
+                               LinearProgressIndicator(
+                                 value: progress,
+                                 backgroundColor: theme.colorScheme.surfaceVariant,
+                                 valueColor: AlwaysStoppedAnimation<Color>(course.colorValue),
+                                 minHeight: 6, // Make the bar slightly thicker
+                                 borderRadius: BorderRadius.circular(3), // Rounded corners
+                               ),
+                             ],
+                           ),
                          ),
                        );
                      },
@@ -392,6 +406,7 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
            Text("Stats", style: textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold)),
            const SizedBox(height: 12.0),
            Card(
+             elevation: 0.5, // Lower elevation
              child: Padding(
                padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0), // Adjusted padding
                child: Row( // Use Row for horizontal layout
@@ -421,68 +436,89 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
 
   // --- Helper Widgets ---
 
-  // Updated Summary Card to be tappable
+  // Updated Summary Card to be tappable and fill horizontal space
   Widget _buildSummaryCard(BuildContext context, String title, String value, IconData icon, {Color? valueColor}) {
     final theme = Theme.of(context);
     final textTheme = theme.textTheme;
 
-    // Determine filter logic based on title
+    // Calculate width for two cards per row
+    final screenWidth = MediaQuery.of(context).size.width;
+    final horizontalPadding = 16.0 * 2; // Padding of the parent ListView
+    final wrapSpacing = 12.0; // Spacing defined in the Wrap widget
+    final cardWidth = (screenWidth - horizontalPadding - wrapSpacing) / 2;
+
+    // Update filter logic calls to pass context
     List<Task>? filteredTasks;
-    String screenTitle = 'Tasks'; // Default title for the pushed screen
+    String screenTitle = 'Tasks';
+    TaskFilter taskFilter = TaskFilter.all; // Default filter
 
     VoidCallback? onTapAction;
-    if (title == 'Tasks Due Today') {
-      filteredTasks = _getTasksDueToday();
-      screenTitle = 'Tasks Due Today';
-    } else if (title == 'Due This Week') {
-      filteredTasks = _getTasksDueThisWeek();
-      screenTitle = 'Tasks Due This Week';
-    } else if (title == 'Overdue Tasks') {
-      filteredTasks = _getOverdueTasks();
-      screenTitle = 'Overdue Tasks';
-    } // Add more cases if needed, e.g., for 'Courses Active'
+    bool isTaskCard = false; // Flag to identify task-related cards
 
-    if (filteredTasks != null) {
-      final tasksToShow = filteredTasks; // Capture for closure
-      onTapAction = () {
-        Navigator.of(context).push(
-          // Use CupertinoPageRoute for iOS-style transition
-          CupertinoPageRoute(
-            builder: (ctx) => TaskListScreen(
-              tasks: tasksToShow, // Pass the pre-filtered list
-              courses: widget.courses, // Pass all courses for lookups
-              onToggleTaskComplete: widget.onToggleTaskComplete,
-              // We might need dummy or adapted callbacks if add/edit/delete
-              // should behave differently or be disabled in this filtered view.
-              // For now, let's pass them through, but they might need adjustment.
-              onAddTask: () { /* Decide how adding works here - maybe add with date prefilled? */
-                 ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(content: Text('Add Task Tapped (from filtered view)')));
-              },
-              onEditTask: (task) { /* Decide how editing works */
-                 ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(content: Text('Edit Task Tapped (from filtered view)')));
-              },
-              onDeleteTask: (taskId) { /* Decide how deleting works */
-                 ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(content: Text('Delete Task Tapped (from filtered view)')));
-              },
-              onLogTime: (taskId, duration) { /* Decide how logging works */
-                 ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(content: Text('Log Time Tapped (from filtered view)')));
-              },
-              // Optionally add a specific title to the TaskListScreen
-              // appBarTitle: screenTitle,
-            ),
-          ),
-        );
-      };
+    if (title == 'Tasks Due Today') {
+      filteredTasks = _getTasksDueToday(context);
+      screenTitle = 'Tasks Due Today';
+      taskFilter = TaskFilter.dueToday;
+      isTaskCard = true;
+    } else if (title == 'Due This Week') {
+      filteredTasks = _getTasksDueThisWeek(context);
+      screenTitle = 'Tasks Due This Week';
+      taskFilter = TaskFilter.dueThisWeek;
+      isTaskCard = true;
+    } else if (title == 'Overdue Tasks') {
+      filteredTasks = _getOverdueTasks(context);
+      screenTitle = 'Overdue Tasks';
+      taskFilter = TaskFilter.overdue;
+      isTaskCard = true;
+    } // Add cases for other potential tappable cards here (e.g., Courses Active -> CourseListScreen)
+    // else if (title == 'Courses Active') {
+    //   // Define action if needed
+    // }
+
+    // Determine if the card should be tappable
+    bool allowTap = false;
+    if (isTaskCard) {
+      // Only allow tap if the filtered task list is not empty
+      allowTap = filteredTasks != null && filteredTasks.isNotEmpty;
+    } else {
+      // Allow tap for non-task cards if an action is defined (currently none for 'Courses Active')
+      allowTap = false; // Set to true if you add an action for non-task cards
+      // Example: if (title == 'Courses Active') { allowTap = true; /* Define onTapAction below */ }
+    }
+
+    // Define the onTap action *only* if tapping is allowed
+    if (allowTap) {
+      // Keep the existing navigation logic for task cards
+       if (isTaskCard) {
+          onTapAction = () {
+            Navigator.of(context).push(
+              CupertinoPageRoute(
+                builder: (ctx) => TaskListScreen(
+                  filter: taskFilter,
+                  appBarTitle: screenTitle,
+                  courses: widget.courses,
+                ),
+              ),
+            );
+          };
+       } else {
+          // Define actions for other tappable cards here if needed
+          // Example:
+          // if (title == 'Courses Active') {
+          //   onTapAction = () { Navigator.of(context).push(...); };
+          // }
+       }
     }
 
     return SizedBox(
-      width: 160, // Fixed width or use constraints
-      child: InkWell( // Make card tappable
-        onTap: onTapAction, // Assign the tap action
-        borderRadius: BorderRadius.circular(12.0), // Match card's border radius
+      width: cardWidth,
+      child: InkWell(
+        onTap: allowTap ? onTapAction : null, // Only enable onTap if allowTap is true
+        borderRadius: BorderRadius.circular(12.0),
         child: Card(
-          elevation: 1.5,
+          elevation: 0.5,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.0)),
+          color: allowTap ? null : Theme.of(context).disabledColor.withOpacity(0.05), // Optional: Dim non-tappable cards
           child: Padding(
             padding: const EdgeInsets.all(16.0),
             child: Column(
@@ -508,37 +544,8 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
     );
   }
 
-  // --- Placeholder build methods for list sections ---
-  // (These need to contain the actual list building logic from the original code)
-  Widget _buildTodaysSchedule(BuildContext context, List<AgendaItem> schedule) {
-    if (schedule.isEmpty) {
-      return const Center(child: Padding(padding: EdgeInsets.symmetric(vertical: 24.0), child: Text('Nothing scheduled for today.')));
-    }
-    // Replace with actual ListView.builder logic for schedule items
-    return Text("[Placeholder for Today's Schedule List]");
-  }
-
-  Widget _buildUpcomingTasks(BuildContext context) {
-    // Filter tasks (e.g., incomplete and due soon)
-    final upcoming = widget.tasks.where((t) => !t.isComplete).toList();
-    upcoming.sort((a, b) {
-       // Sort logic (e.g., by due date)
-       if (a.dueDate == null && b.dueDate == null) return 0;
-       if (a.dueDate == null) return 1;
-       if (b.dueDate == null) return -1;
-       return a.dueDate!.compareTo(b.dueDate!);
-    });
-
-    if (upcoming.isEmpty) {
-      return const Center(child: Padding(padding: EdgeInsets.symmetric(vertical: 24.0), child: Text('No upcoming tasks.')));
-    }
-     // Replace with actual ListView.builder logic for task items, using CheckboxListTile etc.
-     // It will need access to onToggleTaskComplete callback.
-    return Text('[Placeholder for Upcoming Tasks List - Needs ListView.builder implementation]');
-  }
-
   // --- Function to show day details pop-up with Swiping ---
-  void _showDayDetailsPopup(DateTime initialSelectedDate) {
+  void _showDayDetailsPopup(BuildContext buildContext, DateTime initialSelectedDate) {
      // Calculate initial page index based on a reasonable range (e.g., 1 year back, 1 year forward)
      final today = DateTime.now();
      final rangeStart = DateTime(today.year - 1, today.month, today.day);
@@ -547,8 +554,8 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
      _detailsPageController = PageController(initialPage: initialPageIndex);
 
     showModalBottomSheet(
-      context: context,
-      isScrollControlled: true, // Allows the sheet to take up more height
+      context: buildContext, // Use passed context
+      isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -574,15 +581,17 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
                       });
                       // Update the main calendar focus/selection if desired
                       // This requires passing a callback or using provider if state needs to lift up
-                       setState(() {
-                         _selectedDay = newDate;
-                         _focusedDay = newDate;
-                       });
+                       if (mounted) { // Check if DashboardScreen state is mounted
+                         setState(() {
+                            _selectedDay = newDate;
+                            _focusedDay = newDate;
+                         });
+                       }
                     },
                     itemBuilder: (pageCtx, pageIndex) {
                        // Calculate the date for the current page
                        final dateForPage = rangeStart.add(Duration(days: pageIndex));
-                       // Build the content for this specific date
+                       // Pass the correct context (modalContext or pageCtx) to content builder
                        return _buildDayDetailsContent(pageCtx, dateForPage, scrollController);
                     },
                  );
@@ -592,7 +601,6 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
         );
       },
     ).whenComplete(() {
-      // Dispose controller when the sheet is closed
       _detailsPageController?.dispose();
       _detailsPageController = null;
     });
@@ -602,88 +610,89 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
   Widget _buildDayDetailsContent(BuildContext context, DateTime selectedDate, ScrollController scrollController) {
     final theme = Theme.of(context);
     final textTheme = theme.textTheme;
+    // Use Consumer or Provider.of to get tasks and listen for changes
+    final tasksProvider = Provider.of<TasksProvider>(context);
+    final allTasks = tasksProvider.tasks;
 
-    // Use a local StatefulBuilder to handle checkbox state updates *within* this page
-    return StatefulBuilder(
-      builder: (BuildContext context, StateSetter setPageContentState) {
-        // Recalculate data for the selected date
-        final tasksDueOnDay = widget.tasks.where((task) {
-          return task.dueDate != null && isSameDay(task.dueDate!, selectedDate);
-        }).toList();
+    // Filter tasks for the selected date using the latest data
+    final tasksDueOnDay = allTasks.where((task) {
+      return task.dueDate != null && isSameDay(task.dueDate!, selectedDate);
+    }).toList();
 
-        Duration currentTotalTimeLoggedForDay = Duration.zero;
-        for (var task in tasksDueOnDay) {
-          currentTotalTimeLoggedForDay += task.totalTimeSpent;
-        }
-        final currentTimeLoggedString = '${currentTotalTimeLoggedForDay.inHours}h ${currentTotalTimeLoggedForDay.inMinutes.remainder(60)}m';
+    // Calculate time logged based on currently filtered tasks
+    Duration currentTotalTimeLoggedForDay = Duration.zero;
+    for (var task in tasksDueOnDay) {
+      currentTotalTimeLoggedForDay += task.totalTimeSpent;
+    }
+    final currentTimeLoggedString = '${currentTotalTimeLoggedForDay.inHours}h ${currentTotalTimeLoggedForDay.inMinutes.remainder(60)}m';
 
-        return Container(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
+    // Removed outer StatefulBuilder as Provider handles updates
+    return Container(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header
+          Center(
+            child: Text(
+              DateFormat.yMMMEd().format(selectedDate),
+              style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Center(
+            child: Container(
+              width: 40, height: 4,
+              decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(10)
+              )
+            ),
+          ),
+          const SizedBox(height: 20),
+
+          // Time Logged Section
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              // Header
-              Center(
-                child: Text(
-                  DateFormat.yMMMEd().format(selectedDate),
-                  style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
-                ),
-              ),
-              const SizedBox(height: 8),
-              Center(
-                child: Container(
-                  width: 40, height: 4,
-                  decoration: BoxDecoration(
-                      color: Colors.grey[300],
-                      borderRadius: BorderRadius.circular(10)
-                  )
-                ),
-              ),
-              const SizedBox(height: 20),
-
-              // Time Logged Section
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text('Time Logged (for tasks due): ', style: textTheme.titleMedium),
-                  Text(currentTimeLoggedString, style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
-                ],
-              ),
-              const Divider(height: 24),
-
-              // Tasks Due Section
-              Text('Tasks Due:', style: textTheme.titleMedium),
-              const SizedBox(height: 8),
-              Expanded(
-                child: tasksDueOnDay.isEmpty
-                    ? const Center(child: Text('No tasks due on this day.'))
-                    : ListView.builder(
-                        controller: scrollController,
-                        itemCount: tasksDueOnDay.length,
-                        itemBuilder: (listCtx, index) {
-                          final task = tasksDueOnDay[index];
-                          return CheckboxListTile(
-                            title: Text(task.title,
-                                  style: task.isComplete
-                                      ? const TextStyle(decoration: TextDecoration.lineThrough, color: Colors.grey)
-                                      : null),
-                            value: task.isComplete,
-                            onChanged: (_) {
-                              widget.onToggleTaskComplete(task.id);
-                              setPageContentState(() {}); // Update this specific page's content UI
-                            },
-                            dense: true,
-                            controlAffinity: ListTileControlAffinity.leading,
-                          );
-                        },
-                      ),
-              ),
-              // --- TODO: Add completed tasks section later ---
+              Text('Time Logged (for tasks due): ', style: textTheme.titleMedium),
+              Text(currentTimeLoggedString, style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
             ],
           ),
-        );
-      }
+          const Divider(height: 24),
+
+          // Tasks Due Section
+          Text('Tasks Due:', style: textTheme.titleMedium),
+          const SizedBox(height: 8),
+          Expanded(
+            child: tasksDueOnDay.isEmpty
+                ? const Center(child: Text('No tasks due on this day.'))
+                : ListView.builder(
+                    controller: scrollController,
+                    itemCount: tasksDueOnDay.length,
+                    itemBuilder: (listCtx, index) {
+                      final task = tasksDueOnDay[index];
+                      return CheckboxListTile(
+                        title: Text(task.title,
+                              style: task.isComplete
+                                  ? const TextStyle(decoration: TextDecoration.lineThrough, color: Colors.grey)
+                                  : null),
+                        value: task.isComplete,
+                        onChanged: (_) {
+                          // Call provider method directly
+                          tasksProvider.toggleTaskComplete(task.id);
+                          // No need for setPageContentState here - Provider handles notification
+                        },
+                        dense: true,
+                        controlAffinity: ListTileControlAffinity.leading,
+                      );
+                    },
+                  ),
+          ),
+          // --- TODO: Add completed tasks section later ---
+        ],
+      ),
     );
   }
 } 

@@ -92,7 +92,8 @@ class TaskDetailScreen extends StatelessWidget {
         padding: const EdgeInsets.all(16.0),
         children: [
           Card(
-             elevation: 1.5,
+             elevation: 0.5, // Lower elevation
+             margin: EdgeInsets.zero, // Remove margin for tighter look
              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.0)),
              child: Padding(
                padding: const EdgeInsets.all(16.0),

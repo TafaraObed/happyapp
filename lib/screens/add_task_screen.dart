@@ -4,6 +4,8 @@ import 'package:uuid/uuid.dart';
 import '../models/task.dart';
 import '../models/course.dart'; // To select associated course
 import 'package:flutter/services.dart'; // For input formatters
+import 'package:provider/provider.dart'; // Add provider import
+import '../providers/tasks_provider.dart'; // Add tasks provider import
 
 class AddTaskScreen extends StatefulWidget {
   final Task? initialTask; // Optional for editing
@@ -73,7 +75,7 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
     }
   }
 
-  // --- Save Logic ---
+  // --- Save Logic (Updated to use Provider) ---
   void _saveTask() {
     if (_formKey.currentState!.validate()) {
       final double? pointsEarned = double.tryParse(_pointsEarnedController.text);
@@ -93,15 +95,27 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
       }
 
       final taskData = Task(
-        id: _isEditing ? widget.initialTask!.id : null, 
+        id: _isEditing ? widget.initialTask!.id : null, // Provider handles null ID
         title: _titleController.text,
         courseId: _selectedCourseId,
         dueDate: _selectedDueDate,
-        isComplete: _isEditing ? widget.initialTask!.isComplete : false, 
+        isComplete: _isEditing ? widget.initialTask!.isComplete : false,
         pointsEarned: pointsEarned,
         pointsPossible: pointsPossible,
+        // Ensure timeLog is preserved when editing
+        timeLog: _isEditing ? widget.initialTask!.timeLog : [],
       );
-      Navigator.of(context).pop(taskData);
+      
+      // Get provider and call appropriate method
+      final tasksProvider = Provider.of<TasksProvider>(context, listen: false);
+      if (_isEditing) {
+        tasksProvider.editTask(taskData);
+      } else {
+        tasksProvider.addTask(taskData);
+      }
+
+      // Pop the screen without returning data
+      Navigator.of(context).pop();
     }
   }
 

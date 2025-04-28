@@ -3,12 +3,15 @@ import '../models/task.dart';
 import '../models/course.dart';
 import 'package:intl/intl.dart'; // For formatting
 import 'package:collection/collection.dart'; // For groupBy
+import 'package:provider/provider.dart'; // <<< Add provider import
+import '../providers/tasks_provider.dart'; // <<< Add tasks provider import
+import '../models/schedule_entry.dart'; // <<< Import DayOfWeek
 
 class StatsScreen extends StatelessWidget {
-  final List<Task> tasks;
+  // final List<Task> tasks; // <<< Remove tasks parameter
   final List<Course> courses;
 
-  const StatsScreen({super.key, required this.tasks, required this.courses});
+  const StatsScreen({super.key, /* required this.tasks,*/ required this.courses}); // <<< Remove required
 
   // Helper to get course name from ID
   String _getCourseName(String? courseId) {
@@ -23,63 +26,60 @@ class StatsScreen extends StatelessWidget {
   // --- Calculation Logic ---
 
   // Calculate overall task completion rate
-  double _calculateCompletionRate() {
+  double _calculateCompletionRate(List<Task> tasks) {
     if (tasks.isEmpty) return 0.0;
     final completedTasks = tasks.where((task) => task.isComplete).length;
     return completedTasks / tasks.length;
   }
 
   // Calculate total time logged across all tasks
-  Duration _calculateTotalTimeLogged() {
+  Duration _calculateTotalTimeLogged(List<Task> tasks) {
     return tasks.fold(Duration.zero, (sum, task) => sum + task.totalTimeSpent);
   }
 
-  // Calculate grade averages per course, returning both calculated and manual grades.
-  // The map value is a tuple: (calculated_average?, manual_grade?).
-  Map<String?, ({double? calculated, double? manual})> _calculateCourseGradeAverages() {
-    // Find manual grades first
+  // Calculate grade averages per course
+  Map<String, Tuple<double?, double?>> _calculateGradeAverages(List<Task> tasks) {
     final manualGrades = { for (var c in courses) c.id : c.manualGradePercent };
-    // Add entry for general tasks if any course has null manual grade (though unlikely)
-    if (!manualGrades.containsKey(null) && courses.any((c) => c.manualGradePercent == null)) {
-      // This logic might need refinement if general tasks can have manual grades somehow
-    }
-
-    // Group tasks by course ID (null course ID represents general tasks)
     final tasksByCourse = groupBy(tasks, (Task task) => task.courseId);
-    final Map<String?, ({double? calculated, double? manual})> averages = {};
+    final Map<String, Tuple<double?, double?>> averages = {};
 
-    // Ensure all courses (and general tasks if present) are in the map
-    final allCourseIds = <String?>{...courses.map((c) => c.id), ...tasksByCourse.keys};
+    // Include all courses, even if they have no tasks
+    final allCourseIds = <String>{...courses.map((c) => c.id)}; // Start with all course IDs
+    allCourseIds.addAll(tasksByCourse.keys.whereType<String>()); // Add keys from tasks (excluding null)
 
     for (final courseId in allCourseIds) {
-      final courseTasks = tasksByCourse[courseId] ?? []; // Get tasks for this course ID
-      double totalPointsEarned = 0;
-      double totalPointsPossible = 0;
-      int gradedTasksCount = 0;
+      final courseTasks = tasksByCourse[courseId] ?? [];
       double? calculatedAverage;
-
-      for (final task in courseTasks) {
-        // Only include tasks where both pointsEarned and pointsPossible are set
-        if (task.pointsEarned != null && task.pointsPossible != null && task.pointsPossible! > 0) {
-          totalPointsEarned += task.pointsEarned!;
-          totalPointsPossible += task.pointsPossible!;
-          gradedTasksCount++;
-        }
+      // Calculate average only if there are graded tasks
+      final gradedTasks = courseTasks.where((t) => t.pointsPossible != null && t.pointsPossible! > 0 && t.pointsEarned != null).toList();
+      if (gradedTasks.isNotEmpty) {
+         double totalPointsEarned = gradedTasks.fold(0, (sum, t) => sum + t.pointsEarned!);
+         double totalPointsPossible = gradedTasks.fold(0, (sum, t) => sum + t.pointsPossible!);
+         calculatedAverage = (totalPointsPossible > 0) ? totalPointsEarned / totalPointsPossible : null;
       }
-
-      if (gradedTasksCount > 0 && totalPointsPossible > 0) {
-        calculatedAverage = (totalPointsEarned / totalPointsPossible);
-      } else {
-        calculatedAverage = null; // No graded tasks or zero possible points
-      }
-
-      // Get the manual grade for this course ID
       final manualGrade = manualGrades[courseId];
-
-      averages[courseId] = (calculated: calculatedAverage, manual: manualGrade);
+      averages[courseId] = Tuple(calculatedAverage, manualGrade);
     }
+    // Optionally handle general tasks (courseId == null) separately if needed
+    // final generalTasks = tasksByCourse[null] ?? []; ...
 
     return averages;
+  }
+
+  // Calculate total time logged per day of the week
+  Map<DayOfWeek, Duration> _calculateTimeLoggedPerDay(List<Task> tasks) {
+    final Map<DayOfWeek, Duration> timePerDay = {};
+    for (final task in tasks) {
+      for (final log in task.timeLog) {
+         final day = DayOfWeek.values[log.startTime.weekday - 1]; // Monday is 1 -> index 0
+         timePerDay[day] = (timePerDay[day] ?? Duration.zero) + log.duration;
+      }
+    }
+     // Ensure all days are present in the map, even if zero
+     for (final day in DayOfWeek.values) {
+        timePerDay.putIfAbsent(day, () => Duration.zero);
+     }
+    return timePerDay;
   }
 
   // --- End Calculation Logic ---
@@ -87,12 +87,16 @@ class StatsScreen extends StatelessWidget {
   // --- UI Build Method ---
   @override
   Widget build(BuildContext context) {
-    final completionRate = _calculateCompletionRate();
-    final totalTimeLogged = _calculateTotalTimeLogged();
-    final courseAverages = _calculateCourseGradeAverages(); // Calculate averages
-
+    // Get tasks from Provider
+    final tasks = Provider.of<TasksProvider>(context).tasks;
     final theme = Theme.of(context);
     final textTheme = theme.textTheme;
+
+    // Call calculation methods with the tasks list from provider
+    final completionRate = _calculateCompletionRate(tasks);
+    final totalTimeLogged = _calculateTotalTimeLogged(tasks);
+    final timePerDay = _calculateTimeLoggedPerDay(tasks);
+    final gradeAverages = _calculateGradeAverages(tasks);
 
     // Format total time logged
     final hours = totalTimeLogged.inHours;
@@ -169,19 +173,19 @@ class StatsScreen extends StatelessWidget {
                 children: [
                   Text('Course Grade Averages', style: textTheme.titleLarge),
                   const SizedBox(height: 16),
-                  if (courseAverages.isEmpty)
+                  if (gradeAverages.isEmpty)
                     const Center(child: Text('No courses or graded tasks found.'))
                   else
                     // Build list of averages
                     ListView.separated(
                       shrinkWrap: true, // Important inside another ListView
                       physics: const NeverScrollableScrollPhysics(), // Disable scrolling for inner list
-                      itemCount: courseAverages.length,
+                      itemCount: gradeAverages.length,
                       itemBuilder: (context, index) {
-                        final courseId = courseAverages.keys.elementAt(index);
-                        final gradeData = courseAverages[courseId]!;
-                        final calculatedAverage = gradeData.calculated;
-                        final manualGrade = gradeData.manual;
+                        final courseId = gradeAverages.keys.elementAt(index);
+                        final gradeData = gradeAverages[courseId]!;
+                        final calculatedAverage = gradeData.item1;
+                        final manualGrade = gradeData.item2;
                         final courseName = _getCourseName(courseId);
 
                         // Determine which grade to display and the text
@@ -224,4 +228,11 @@ class StatsScreen extends StatelessWidget {
       ),
     );
   }
+}
+
+// Helper Tuple class (keep as is)
+class Tuple<T1, T2> {
+  final T1 item1;
+  final T2 item2;
+  Tuple(this.item1, this.item2);
 } 

@@ -68,8 +68,8 @@ class CourseListScreen extends StatelessWidget {
                    ));
                 },
                 child: Card(
-                  margin: const EdgeInsets.only(bottom: 12.0),
-                  elevation: 1.0,
+                  margin: const EdgeInsets.only(bottom: 8.0),
+                  elevation: 0.5,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.0)),
                   child: ListTile(
                     leading: CircleAvatar(backgroundColor: course.colorValue, radius: 15),

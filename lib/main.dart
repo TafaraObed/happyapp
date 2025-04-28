@@ -15,6 +15,7 @@ import 'models/schedule_entry.dart'; // Import ScheduleEntry model
 import 'models/task.dart'; // Import Task model
 import 'providers/theme_provider.dart'; // Import ThemeProvider
 import 'providers/settings_provider.dart'; // Import SettingsProvider
+import 'providers/tasks_provider.dart'; // <<< Import TasksProvider
 import 'package:uuid/uuid.dart'; // Keep for non-sample data ID generation
 import 'models/time_log_entry.dart'; // Import TimeLogEntry
 import 'package:flutter/cupertino.dart'; // Import Cupertino library
@@ -66,53 +67,16 @@ final List<Course> _sampleCourses = [
   ),
 ];
 
-final List<Task> _sampleTasks = [
-  Task(
-    title: 'Assignment 1: Basic Algorithms',
-    courseId: _sampleCourse1Id,
-    dueDate: DateTime.now().add(const Duration(days: 7)),
-  ),
-  Task(
-    title: 'Read Chapter 3: Functions',
-    courseId: _sampleCourse1Id,
-    dueDate: DateTime.now().add(const Duration(days: 4)),
-    isComplete: true, // Example of a completed task
-  ),
-  Task(
-    title: 'Problem Set 1: Limits',
-    courseId: _sampleCourse2Id,
-    dueDate: DateTime.now().add(const Duration(days: 6)),
-  ),
-  Task(
-    title: 'Watch Khan Academy: Derivatives',
-    courseId: _sampleCourse2Id,
-    // No due date
-  ),
-   Task(
-    title: 'Essay Outline: Mesopotamia',
-    courseId: _sampleCourse3Id,
-     dueDate: DateTime.now().add(const Duration(days: 10)),
-  ),
-   Task(
-    title: 'Map Quiz Practice',
-    courseId: _sampleCourse3Id,
-     dueDate: DateTime.now().add(const Duration(days: 3)),
-  ),
-  Task(
-    title: 'Prepare Midterm Study Guide', // Not linked to a course
-     dueDate: DateTime.now().add(const Duration(days: 21)),
-  )
-];
-
 // --- End Sample Data Definition ---
 
 void main() {
-  // Use MultiProvider to provide both ThemeProvider and SettingsProvider
+  // Use MultiProvider to provide ThemeProvider, SettingsProvider, and TasksProvider
   runApp(
     MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
-        ChangeNotifierProvider(create: (_) => SettingsProvider()), // Add SettingsProvider
+        ChangeNotifierProvider(create: (_) => SettingsProvider()),
+        ChangeNotifierProvider(create: (_) => TasksProvider()), // <<< Add TasksProvider
       ],
       child: const StudyPlannerApp(),
     ),
@@ -252,25 +216,27 @@ class MainScreen extends StatefulWidget {
 
 // Renamed from _StudyPlannerHomeState
 class _MainScreenState extends State<MainScreen> {
-  int _selectedIndex = 0; // Index for the selected tab
-  bool _isLoading = true; // Add loading state
+  int _selectedIndex = 0;
+  bool _isLoading = true; // Keep loading state for Courses
 
   // Keys for SharedPreferences
   static const String _coursesKey = 'courses_data';
-  static const String _tasksKey = 'tasks_data';
+  // static const String _tasksKey = 'tasks_data'; // <<< Remove tasks key (handled by provider)
 
   // --- Course State & Methods ---
-  List<Course> _courses = []; // Initialize empty course list
+  List<Course> _courses = []; // Keep course list
 
   @override
   void initState() {
     super.initState();
-    _loadData(); // Load data when the widget is initialized
+    _loadCourseData(); // Load only course data here
+    // Tasks are loaded by TasksProvider constructor
   }
 
-  Future<void> _loadData() async {
+  Future<void> _loadCourseData() async {
+    setState(() { _isLoading = true; }); // Start loading courses
     final prefs = await SharedPreferences.getInstance();
-    bool dataLoadedFromPrefs = false;
+    bool coursesLoadedFromPrefs = false;
 
     // Try loading courses
     final coursesJsonString = prefs.getString(_coursesKey);
@@ -278,58 +244,41 @@ class _MainScreenState extends State<MainScreen> {
       try {
         final List<dynamic> coursesJson = jsonDecode(coursesJsonString);
         _courses = coursesJson.map((json) => Course.fromJson(json)).toList();
-        dataLoadedFromPrefs = true; // Mark if courses were loaded
+        coursesLoadedFromPrefs = true;
       } catch (e) {
         print("Error decoding courses: $e");
-        // Consider clearing the invalid key: await prefs.remove(_coursesKey);
+        await prefs.remove(_coursesKey);
+        _courses = [];
       }
     }
 
-    // Try loading tasks
-    final tasksJsonString = prefs.getString(_tasksKey);
-    if (tasksJsonString != null) {
-       try {
-        final List<dynamic> tasksJson = jsonDecode(tasksJsonString);
-        _tasks = tasksJson.map((json) => Task.fromJson(json)).toList();
-         // We only consider prefs loaded if BOTH courses and tasks had *some* data,
-         // but primarily base the sample data load on courses being empty.
-       } catch (e) {
-         print("Error decoding tasks: $e");
-         // Consider clearing the invalid key: await prefs.remove(_tasksKey);
-       }
-    }
-
-    // If NO courses were loaded from prefs, assume first launch or cleared data
-    // and load sample data.
-    if (!dataLoadedFromPrefs && _courses.isEmpty) {
-      print("No existing course data found. Loading sample data...");
-      _courses = List.from(_sampleCourses); // Use copies
-      _tasks = List.from(_sampleTasks);
-      // Immediately save the sample data back to preferences
-      await _saveData(); 
-      print("Sample data loaded and saved.");
+    // Load sample courses if none were loaded
+    if (!coursesLoadedFromPrefs) {
+      print("No existing course data found. Loading sample courses...");
+      _courses = List.from(_sampleCourses);
+      await _saveCourseData(); // Save samples
+      print("Sample courses loaded and saved.");
     }
 
     // Ensure widget is still mounted before calling setState
      if (mounted) {
       setState(() {
-        _isLoading = false; // Data loading finished
+        _isLoading = false; // Course loading finished
       });
     }
   }
 
-  Future<void> _saveData() async {
-     if (_isLoading) return; // Avoid saving during initial load if sample data is being added
+  Future<void> _saveCourseData() async {
+     if (_isLoading) return;
      final prefs = await SharedPreferences.getInstance();
      try {
        final coursesJsonString = jsonEncode(_courses.map((c) => c.toJson()).toList());
        await prefs.setString(_coursesKey, coursesJsonString);
-       final tasksJsonString = jsonEncode(_tasks.map((t) => t.toJson()).toList());
-       await prefs.setString(_tasksKey, tasksJsonString);
+       // final tasksJsonString = jsonEncode(_tasks.map((t) => t.toJson()).toList()); // <<< Remove task saving
+       // await prefs.setString(_tasksKey, tasksJsonString);
      } catch (e) {
-       print("Error saving data: $e");
-       // Maybe show a SnackBar to the user
-       _showSnackBar("Error saving data. Please try again.");
+       print("Error saving course data: $e");
+       _showSnackBar("Error saving course data.");
      }
   }
 
@@ -345,13 +294,12 @@ class _MainScreenState extends State<MainScreen> {
 
   void _addCourse() async {
     final newCourse = await Navigator.of(context).push<Course>(
-      // Use CupertinoPageRoute for iOS-style transition
       CupertinoPageRoute(builder: (ctx) => const AddCourseScreen()),
     );
     if (newCourse != null) {
       setState(() {
         _courses.add(newCourse);
-        _saveData();
+        _saveCourseData();
       });
       _showSnackBar('Course "${newCourse.name}" added.');
     }
@@ -359,7 +307,6 @@ class _MainScreenState extends State<MainScreen> {
 
   void _editCourse(Course courseToEdit) async {
     final updatedCourse = await Navigator.of(context).push<Course>(
-      // Use CupertinoPageRoute for iOS-style transition
       CupertinoPageRoute(builder: (ctx) => AddCourseScreen(initialCourse: courseToEdit)),
     );
     if (updatedCourse != null) {
@@ -367,7 +314,7 @@ class _MainScreenState extends State<MainScreen> {
         final index = _courses.indexWhere((c) => c.id == updatedCourse.id);
         if (index != -1) {
           _courses[index] = updatedCourse;
-          _saveData();
+          _saveCourseData();
         }
       });
       _showSnackBar('Course "${updatedCourse.name}" updated.');
@@ -390,99 +337,30 @@ class _MainScreenState extends State<MainScreen> {
        ),
      );
      if (confirm == true) {
-      String deletedCourseName = courseToRemove.name; // Store name before removing
+      String deletedCourseName = courseToRemove.name;
       setState(() {
         _courses.removeAt(indexToRemove);
-        _saveData();
+        _saveCourseData();
       });
-      _showSnackBar('Course "$deletedCourseName" deleted.'); // Use stored name
+      _showSnackBar('Course "$deletedCourseName" deleted.');
      }
   }
   // --- End of Course State & Methods ---
 
-  // --- Task State & Methods ---
-  List<Task> _tasks = []; // Initialize empty task list
-  
-  void _addTask() async {
-     final newTask = await Navigator.of(context).push<Task>(
-       MaterialPageRoute(builder: (ctx) => AddTaskScreen(courses: _courses)),
-     );
-     if (newTask != null) {
-       setState(() {
-         _tasks.add(newTask);
-         _saveData();
-       });
-       _showSnackBar('Task "${newTask.title}" added.');
-     }
-  }
-  
-  void _editTask(Task taskToEdit) async {
-     final updatedTask = await Navigator.of(context).push<Task>(
-       MaterialPageRoute(builder: (ctx) => AddTaskScreen(
-         courses: _courses, 
-         initialTask: taskToEdit,
-        )),
-     );
-     if (updatedTask != null) {
-       setState(() {
-         final index = _tasks.indexWhere((t) => t.id == updatedTask.id);
-         if (index != -1) {
-           _tasks[index] = updatedTask;
-           _saveData();
-         }
-       });
-       _showSnackBar('Task "${updatedTask.title}" updated.');
-     }
-  }
-  
-  void _deleteTask(String taskId) {
-      // Find task first for SnackBar message
-      final indexToRemove = _tasks.indexWhere((t) => t.id == taskId);
-      if (indexToRemove == -1) return;
-      String deletedTaskTitle = _tasks[indexToRemove].title;
-
-      // Optional: Add confirmation dialog here like for courses
-      setState(() {
-         _tasks.removeAt(indexToRemove);
-         _saveData();
-      });
-      _showSnackBar('Task "$deletedTaskTitle" deleted.');
-  }
-  
-  void _toggleTaskComplete(String taskId) {
-      // Find task first for SnackBar message
-      final index = _tasks.indexWhere((task) => task.id == taskId);
-      if (index != -1) {
-        final task = _tasks[index];
-        final newState = !task.isComplete;
-        setState(() {
-          _tasks[index] = task.copyWith(isComplete: newState);
-          _saveData();
-        });
-         _showSnackBar('Task "${task.title}" marked as ${newState ? 'complete' : 'incomplete'}.');
-      }
-  }
+  // --- Task State & Methods (REMOVE ALL) ---
+  /*
+  List<Task> _tasks = []; 
+  void _addTask() async { ... }
+  void _editTask(Task taskToEdit) async { ... }
+  void _deleteTask(String taskId) { ... }
+  void _toggleTaskComplete(String taskId) { ... }
+  */
   // --- End of Task State & Methods ---
 
-  // --- Time Logging Method ---
-  void _logTimeForTask(String taskId, Duration duration) {
-    final index = _tasks.indexWhere((task) => task.id == taskId);
-    if (index != -1) {
-      final task = _tasks[index];
-      final newLogEntry = TimeLogEntry(startTime: DateTime.now(), duration: duration);
-      // Create a new list with the added entry
-      final updatedTimeLog = List<TimeLogEntry>.from(task.timeLog)..add(newLogEntry);
-      
-      setState(() {
-        _tasks[index] = task.copyWith(timeLog: updatedTimeLog);
-         _saveData(); // Save after logging time
-      });
-       // Optional: Show confirmation SnackBar
-       final hours = duration.inHours;
-       final minutes = duration.inMinutes.remainder(60);
-       _showSnackBar('Logged ${hours}h ${minutes}m for "${task.title}".');
-    }
-  }
+  // --- Time Logging Method (REMOVE) ---
+  /*
+  void _logTimeForTask(String taskId, Duration duration) { ... }
+  */
   // --- End Time Logging Method ---
 
   void _onItemTapped(int index) {
@@ -493,8 +371,11 @@ class _MainScreenState extends State<MainScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Show loading indicator while data loads
-    if (_isLoading) {
+    // Access TaskProvider to check its loading state as well
+    final tasksProvider = Provider.of<TasksProvider>(context); 
+
+    // Show loading indicator if either Courses or Tasks are loading
+    if (_isLoading || tasksProvider.isLoading) {
       return const Scaffold(
         body: Center(child: CircularProgressIndicator()),
       );
@@ -502,12 +383,13 @@ class _MainScreenState extends State<MainScreen> {
 
     // Build screens once data is loaded
     final List<Widget> screens = <Widget>[
-      // Use Keys for AnimatedSwitcher to properly differentiate widgets
+      // Use Keys for AnimatedSwitcher
       DashboardScreen(
         key: const ValueKey('dashboard'),
-        courses: _courses,
-        tasks: _tasks,
-        onToggleTaskComplete: _toggleTaskComplete,
+        courses: _courses, // Pass courses
+        // tasks: _tasks, // <<< Remove tasks from here
+        // onToggleTaskComplete: _toggleTaskComplete, // <<< Remove callback
+        onEditCourse: _editCourse, // Pass course edit callback
       ),
       CourseListScreen(
         key: const ValueKey('courses'),
@@ -518,68 +400,44 @@ class _MainScreenState extends State<MainScreen> {
       ),
       TaskListScreen(
         key: const ValueKey('tasks'),
-        tasks: _tasks,
-        courses: _courses,
-        onToggleTaskComplete: _toggleTaskComplete,
-        onAddTask: _addTask,
-        onEditTask: _editTask,
-        onDeleteTask: _deleteTask,
-        onLogTime: _logTimeForTask, // Pass the new callback
+        // tasks: _tasks, // <<< Remove tasks from here
+        courses: _courses, // Pass courses for lookup
+        // onToggleTaskComplete: _toggleTaskComplete, // <<< Remove callback
+        // onAddTask: _addTask, // <<< Remove callback
+        // onEditTask: _editTask, // <<< Remove callback
+        // onDeleteTask: _deleteTask, // <<< Remove callback
+        // onLogTime: _logTimeForTask, // <<< Remove callback
       ),
       StatsScreen(
          key: const ValueKey('stats'),
-         tasks: _tasks,
+         // tasks: _tasks, // <<< Remove tasks from here
          courses: _courses,
       ),
       SettingsScreen(key: const ValueKey('settings')),
     ];
 
     return Scaffold(
-      // Replace IndexedStack with AnimatedSwitcher
       body: AnimatedSwitcher(
-        duration: const Duration(milliseconds: 300), // Adjust duration as needed
+        duration: const Duration(milliseconds: 300),
         transitionBuilder: (Widget child, Animation<double> animation) {
-          // Use FadeTransition
-          return FadeTransition(
-            opacity: animation,
-            child: child,
-          );
+          return FadeTransition(opacity: animation, child: child);
         },
-        child: screens[_selectedIndex], // The current screen based on index
+        child: screens[_selectedIndex],
       ),
-      // Add the BottomNavigationBar
       bottomNavigationBar: BottomNavigationBar(
         items: const <BottomNavigationBarItem>[
-          BottomNavigationBarItem(
-            icon: Icon(Icons.dashboard),
-            label: 'Dashboard',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.book),
-            label: 'Courses',
-          ),
-          // Add Tasks tab
-          BottomNavigationBarItem(
-            icon: Icon(Icons.task_alt),
-            label: 'Tasks',
-          ),
-          // Add Stats tab item
-          BottomNavigationBarItem(
-            icon: Icon(Icons.analytics_outlined), // Or Icons.bar_chart
-            label: 'Stats',
-          ),
-          // Add Settings tab item
-          BottomNavigationBarItem(
-            icon: Icon(Icons.settings),
-            label: 'Settings',
-          ),
+          BottomNavigationBarItem(icon: Icon(Icons.dashboard), label: 'Dashboard'),
+          BottomNavigationBarItem(icon: Icon(Icons.book), label: 'Courses'),
+          BottomNavigationBarItem(icon: Icon(Icons.task_alt), label: 'Tasks'),
+          BottomNavigationBarItem(icon: Icon(Icons.analytics_outlined), label: 'Stats'),
+          BottomNavigationBarItem(icon: Icon(Icons.settings), label: 'Settings'),
         ],
         currentIndex: _selectedIndex,
         selectedItemColor: Theme.of(context).colorScheme.primary,
-        unselectedItemColor: Colors.grey, // Optional: make unselected items clearer
-        showUnselectedLabels: true, // Optional: always show labels
+        unselectedItemColor: Colors.grey,
+        showUnselectedLabels: true,
         onTap: _onItemTapped,
-        type: BottomNavigationBarType.fixed, // Ensure type is fixed for >3 items
+        type: BottomNavigationBarType.fixed,
       ),
     );
   }
