@@ -4,24 +4,21 @@ import '../providers/theme_provider.dart'; // Import ThemeProvider
 import 'package:table_calendar/table_calendar.dart'; // Import for StartingDayOfWeek
 import '../providers/settings_provider.dart'; // Import SettingsProvider
 import 'package:intl/intl.dart'; // Import intl
+import '../themes/app_themes.dart'; // <<< Import AppTheme enum
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
 
-  // Helper to get display name for ThemeMode
-  String _themeModeToString(ThemeMode mode) {
-    switch (mode) {
-      case ThemeMode.light: return 'Light';
-      case ThemeMode.dark: return 'Dark';
-      case ThemeMode.system: return 'System Default';
+  // Helper to get display name for AppTheme
+  String _appThemeToString(AppTheme theme) {
+    switch (theme) {
+      case AppTheme.light: return 'Light (Default)';
+      case AppTheme.dark: return 'Dark (Default)';
+      case AppTheme.solarizedLight: return 'Solarized Light';
+      case AppTheme.solarizedDark: return 'Solarized Dark';
+      // Add cases for other themes if needed
     }
   }
-
-  // Predefined accent colors
-  final List<Color> _availableAccentColors = const [
-    Colors.blueAccent, Colors.redAccent, Colors.greenAccent, Colors.purpleAccent,
-    Colors.orange, Colors.teal, Colors.pink, Colors.indigo, 
-  ];
 
   // --- Helper to pick date and update provider ---
   Future<void> _pickDate(
@@ -41,10 +38,11 @@ class SettingsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Get the ThemeProvider instance
+    // Get providers
     final themeProvider = Provider.of<ThemeProvider>(context);
-    final settingsProvider = Provider.of<SettingsProvider>(context); // Get SettingsProvider
-    final currentSeedColor = themeProvider.seedColor; // Get current seed color
+    final settingsProvider = Provider.of<SettingsProvider>(context);
+    // Removed seedColor logic
+    // final currentSeedColor = themeProvider.seedColor;
 
     // Format dates for display
     final DateFormat formatter = DateFormat.yMMMd(); // e.g., Sep 5, 2024
@@ -73,70 +71,55 @@ class SettingsScreen extends StatelessWidget {
             child: Text('Appearance', style: Theme.of(context).textTheme.titleLarge),
           ),
           const SizedBox(height: 8),
-          // RadioListTiles for theme selection
-          RadioListTile<ThemeMode>(
-            title: const Text('Light Theme'),
-            value: ThemeMode.light,
-            groupValue: themeProvider.themeMode,
-            onChanged: (ThemeMode? value) {
+          // RadioListTiles for AppTheme selection
+          RadioListTile<AppTheme>(
+            title: Text(_appThemeToString(AppTheme.light)),
+            value: AppTheme.light,
+            groupValue: themeProvider.currentTheme, // Use currentTheme
+            onChanged: (AppTheme? value) {
               if (value != null) {
-                themeProvider.setThemeMode(value);
+                themeProvider.setTheme(value); // Use setTheme
               }
             },
           ),
-          RadioListTile<ThemeMode>(
-            title: const Text('Dark Theme'),
-            value: ThemeMode.dark,
-            groupValue: themeProvider.themeMode,
-             onChanged: (ThemeMode? value) {
+          RadioListTile<AppTheme>(
+            title: Text(_appThemeToString(AppTheme.dark)),
+            value: AppTheme.dark,
+            groupValue: themeProvider.currentTheme,
+             onChanged: (AppTheme? value) {
               if (value != null) {
-                themeProvider.setThemeMode(value);
+                themeProvider.setTheme(value);
               }
             },
           ),
-           RadioListTile<ThemeMode>(
-            title: const Text('System Default'),
-            subtitle: const Text('Follows your device settings'),
-            value: ThemeMode.system,
-            groupValue: themeProvider.themeMode,
-             onChanged: (ThemeMode? value) {
+           RadioListTile<AppTheme>(
+            title: Text(_appThemeToString(AppTheme.solarizedLight)),
+            value: AppTheme.solarizedLight,
+            groupValue: themeProvider.currentTheme,
+             onChanged: (AppTheme? value) {
               if (value != null) {
-                themeProvider.setThemeMode(value);
+                themeProvider.setTheme(value);
               }
             },
           ),
+          RadioListTile<AppTheme>(
+            title: Text(_appThemeToString(AppTheme.solarizedDark)),
+            value: AppTheme.solarizedDark,
+            groupValue: themeProvider.currentTheme,
+             onChanged: (AppTheme? value) {
+              if (value != null) {
+                themeProvider.setTheme(value);
+              }
+            },
+          ),
+          // Remove System Default for now as ThemeProvider doesn't handle it explicitly
+          // RadioListTile<ThemeMode>(...
           const Divider(indent: 16, endIndent: 16),
           
-          // --- Accent Color Section ---
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16.0, 16.0, 16.0, 8.0), // Add padding top
-            child: Text('Accent Color', style: Theme.of(context).textTheme.titleMedium),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0),
-            child: Wrap(
-              spacing: 10.0,
-              runSpacing: 10.0,
-              children: _availableAccentColors.map((color) {
-                bool isSelected = currentSeedColor.value == color.value;
-                return GestureDetector(
-                  onTap: () {
-                    themeProvider.setSeedColor(color);
-                  },
-                  child: CircleAvatar(
-                    radius: 20,
-                    backgroundColor: color,
-                    child: isSelected
-                        ? const Icon(Icons.check, color: Colors.white, size: 20)
-                        : null,
-                     // Add border if selected for better visibility?
-                    // foregroundColor: isSelected ? Colors.white : null,
-                  ),
-                );
-              }).toList(),
-            ),
-          ),
-          const Divider(indent: 16, endIndent: 16, height: 32), // Add divider below
+          // --- Accent Color Section (REMOVED) ---
+          // Padding(... Accent Color ...),
+          // Padding(... Wrap ...),
+          // const Divider(indent: 16, endIndent: 16, height: 32), 
           
           // --- Calendar Settings Section ---
           Padding(
