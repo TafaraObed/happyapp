@@ -29,6 +29,7 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
   
   String? _selectedCourseId;
   DateTime? _selectedDueDate;
+  int _selectedImportance = 2; // Default to Medium importance (1=Low, 2=Medium, 3=High)
 
   late String _appBarTitle;
   late String _saveButtonText;
@@ -44,6 +45,7 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
       _selectedDueDate = task.dueDate;
       _pointsEarnedController.text = task.pointsEarned?.toString() ?? '';
       _pointsPossibleController.text = task.pointsPossible?.toString() ?? '';
+      _selectedImportance = task.importance ?? 2; // Default to Medium if not set
       _appBarTitle = 'Edit Task';
       _saveButtonText = 'Update Task';
     } else {
@@ -102,6 +104,7 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
         isComplete: _isEditing ? widget.initialTask!.isComplete : false,
         pointsEarned: pointsEarned,
         pointsPossible: pointsPossible,
+        importance: _selectedImportance,
         // Ensure timeLog is preserved when editing
         timeLog: _isEditing ? widget.initialTask!.timeLog : [],
       );
@@ -174,7 +177,7 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
                        value: course.id,
                        child: Text(course.name, overflow: TextOverflow.ellipsis),
                      );
-                   }).toList(),
+                   }),
                  ],
                  onChanged: (String? newValue) {
                    setState(() {
@@ -201,6 +204,37 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
                    ),
                  ],
                ),
+              const SizedBox(height: 16.0),
+              
+              // --- Importance Selection ---
+              Text('Task Importance', style: Theme.of(context).textTheme.titleMedium),
+              const SizedBox(height: 8.0),
+              SegmentedButton<int>(
+                segments: const [
+                  ButtonSegment<int>(
+                    value: 1,
+                    label: Text('Low'),
+                    icon: Icon(Icons.arrow_downward),
+                  ),
+                  ButtonSegment<int>(
+                    value: 2,
+                    label: Text('Medium'),
+                    icon: Icon(Icons.remove),
+                  ),
+                  ButtonSegment<int>(
+                    value: 3,
+                    label: Text('High'),
+                    icon: Icon(Icons.arrow_upward),
+                  ),
+                ],
+                selected: {_selectedImportance},
+                onSelectionChanged: (Set<int> newSelection) {
+                  setState(() {
+                    _selectedImportance = newSelection.first;
+                  });
+                },
+              ),
+              
               const SizedBox(height: 24.0),
               
               // --- Grade Inputs ---
@@ -268,4 +302,4 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
       ),
     );
   }
-} 
+}

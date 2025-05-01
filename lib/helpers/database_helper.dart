@@ -20,7 +20,7 @@ class DatabaseHelper {
   DatabaseHelper._init();
 
   static const String _dbName = 'study_planner_v2.db'; // Increment version if schema changes
-  static const int _dbVersion = 4; // Increment version to trigger upgrades (v3->v4 for metadata)
+  static const int _dbVersion = 5; // <<< Incremented version for importance column
   static const String _prefDbVersionKey = 'db_version'; // Key for storing DB version in prefs
 
   // Table names
@@ -151,12 +151,13 @@ class DatabaseHelper {
          isComplete INTEGER NOT NULL,        -- 0 for false, 1 for true
          pointsEarned REAL,
          pointsPossible REAL,
-         timeLogged TEXT,                    -- Store Duration as ISO8601 String (e.g., PT1H30M)
-         createdAt TEXT NOT NULL,            -- Store as ISO8601 String
-         completedAt TEXT,                   -- Store as ISO8601 String when completed
-         FOREIGN KEY (user_id) REFERENCES $tableUsers (id) ON DELETE CASCADE
-         -- Optional: FOREIGN KEY (courseId) REFERENCES $tableCourses (id) 
-         -- Note: Foreign key on courseId (TEXT) is trickier in SQLite if not primary key of courses
+          timeLogged TEXT,                    -- Store Duration as ISO8601 String (e.g., PT1H30M)
+          createdAt TEXT NOT NULL,            -- Store as ISO8601 String
+          completedAt TEXT,                   -- Store as ISO8601 String when completed
+          importance INTEGER,                 -- <<< Add importance column (nullable integer)
+          FOREIGN KEY (user_id) REFERENCES $tableUsers (id) ON DELETE CASCADE
+          -- Optional: FOREIGN KEY (courseId) REFERENCES $tableCourses (id)
+          -- Note: Foreign key on courseId (TEXT) is trickier in SQLite if not primary key of courses
        )
      ''');
      print("Table '$tableTasks' created.");
@@ -169,7 +170,22 @@ class DatabaseHelper {
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
     print("Upgrading database from v$oldVersion to v$newVersion");
     
-    // Add metadata column to courses table if upgrading to version 4
+    // Add importance column to tasks table if upgrading from version < 5
+    if (oldVersion < 5) {
+      try {
+        final tableInfo = await db.rawQuery("PRAGMA table_info($tableTasks)");
+        final hasImportance = tableInfo.any((col) => col['name'] == 'importance');
+        if (!hasImportance) {
+          print("Adding importance column to tasks table");
+          await db.execute("ALTER TABLE $tableTasks ADD COLUMN importance INTEGER");
+        }
+      } catch (e) {
+        print("ERROR adding importance column during upgrade: $e");
+        // Handle or log error appropriately
+      }
+    }
+    
+    // Add metadata column to courses table if upgrading from version < 4
     if (oldVersion < 4) {
       try {
         final tableInfo = await db.rawQuery("PRAGMA table_info($tableCourses)");
@@ -741,4 +757,4 @@ class DatabaseHelper {
       return -1;
     }
   }
-} 
+}

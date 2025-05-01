@@ -16,13 +16,14 @@ import '../providers/settings_provider.dart'; // <<< Import for week start day
 import 'package:table_calendar/table_calendar.dart'; // <<< Import for isSameDay
 import 'dart:math'; // For min function in sorting
 import 'package:vibration/vibration.dart';  // Add vibration import
+import '../services/prioritization_service.dart'; // Import for priority sorting
 
 // --- Enums for Sorting and Filtering ---
 enum SortOption {
   dueDateAsc, dueDateDesc,
   titleAsc, titleDesc,
   courseAsc, courseDesc,
-  // Add others like completion status if needed
+  priority, // Add priority sort option
 }
 
 enum CompletionFilter {
@@ -219,6 +220,12 @@ class _TaskListScreenState extends State<TaskListScreen> { // State class
   // --- Sorting Logic ---
   List<Task> _applySort(List<Task> tasks) {
     List<Task> sortedTasks = List.from(tasks); // Create a mutable copy
+    
+    // Special case for priority sorting - use the PrioritizationService
+    if (_sortBy == SortOption.priority) {
+      return PrioritizationService.sortByPriority(sortedTasks);
+    }
+    
     sortedTasks.sort((a, b) {
       int compareResult = 0;
       switch (_sortBy) {
@@ -239,6 +246,9 @@ class _TaskListScreenState extends State<TaskListScreen> { // State class
           break;
         case SortOption.courseDesc:
           compareResult = _compareCourses(b.courseId, a.courseId); // Reversed
+          break;
+        case SortOption.priority:
+          // This case is handled above, but included for completeness
           break;
       }
       // As a secondary sort, always put incomplete tasks first within the primary sort
@@ -598,6 +608,12 @@ class _TaskListScreenState extends State<TaskListScreen> { // State class
                 value: SortOption.courseDesc,
                 checked: _sortBy == SortOption.courseDesc,
                 child: const Text('Sort by Course (Z-A)'),
+              ),
+              const PopupMenuDivider(),
+              CheckedPopupMenuItem<SortOption>(
+                value: SortOption.priority,
+                checked: _sortBy == SortOption.priority,
+                child: const Text('Sort by Priority (AI)'),
               ),
             ],
           ),

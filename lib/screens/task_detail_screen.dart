@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import '../models/task.dart';
 import '../models/course.dart';
 import 'add_task_screen.dart'; // To navigate for editing
+import '../services/prioritization_service.dart'; // For priority score calculation
 
 class TaskDetailScreen extends StatelessWidget {
   final Task task;
@@ -33,6 +34,31 @@ class TaskDetailScreen extends StatelessWidget {
     final hours = duration.inHours;
     final minutes = duration.inMinutes.remainder(60);
     return '${hours}h ${minutes}m';
+  }
+
+  // Helper to get importance text and icon
+  String _getImportanceText(int? importance) {
+    switch (importance) {
+      case 1:
+        return 'Low';
+      case 3:
+        return 'High';
+      case 2:
+      default:
+        return 'Medium';
+    }
+  }
+
+  IconData _getImportanceIcon(int? importance) {
+    switch (importance) {
+      case 1:
+        return Icons.arrow_downward;
+      case 3:
+        return Icons.arrow_upward;
+      case 2:
+      default:
+        return Icons.remove;
+    }
   }
 
   // Helper to build info rows (Icon, Label, Value)
@@ -67,6 +93,10 @@ class TaskDetailScreen extends StatelessWidget {
        final earnedStr = task.pointsEarned!.toStringAsFixed(task.pointsEarned! % 1 == 0 ? 0 : 1);
        gradeString = '$earnedStr (Points Earned)';
     }
+
+    // Calculate priority score for display
+    final priorityScore = PrioritizationService.calculatePriorityScore(task);
+    final priorityLevel = PrioritizationService.getPriorityLevelDescription(priorityScore);
 
     return Scaffold(
       appBar: AppBar(
@@ -107,7 +137,9 @@ class TaskDetailScreen extends StatelessWidget {
                    if (task.dueDate != null)
                      _buildInfoRow(context, Icons.calendar_today_outlined, 'Due Date', DateFormat.yMMMEd().format(task.dueDate!)),
                    _buildInfoRow(context, Icons.check_circle_outline, 'Status', task.isComplete ? 'Complete' : 'Incomplete'),
-                    const Divider(height: 24),
+                   _buildInfoRow(context, _getImportanceIcon(task.importance), 'Importance', _getImportanceText(task.importance)),
+                   _buildInfoRow(context, Icons.priority_high, 'Priority', '$priorityLevel (Score: ${priorityScore.toStringAsFixed(0)})'),
+                   const Divider(height: 24),
                    _buildInfoRow(context, Icons.grade_outlined, 'Grade', gradeString),
                    _buildInfoRow(context, Icons.timer_outlined, 'Time Logged', _formatDuration(task.totalTimeSpent)),
                    
@@ -122,4 +154,4 @@ class TaskDetailScreen extends StatelessWidget {
       ),
     );
   }
-} 
+}

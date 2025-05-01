@@ -82,16 +82,18 @@ class CourseListScreen extends StatelessWidget {
                     leading: CircleAvatar(backgroundColor: course.colorValue, radius: 15),
                     title: Text(course.name),
                     subtitle: Text(subtitle),
-                    trailing: PopupMenuButton<String>(
-                      icon: const Icon(Icons.more_vert),
-                      onSelected: (value) {
-                        if (value == 'edit') {
-                          onEdit(course);
-                        } else if (value == 'delete') {
-                          onDelete(course.id);
-                        }
-                      },
-                      itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+                    trailing: Builder(
+                      builder: (BuildContext context) {
+                        return PopupMenuButton<String>(
+                          icon: const Icon(Icons.more_vert),
+                          onSelected: (value) {
+                            if (value == 'edit') {
+                              onEdit(course);
+                            } else if (value == 'delete') {
+                              onDelete(course.id);
+                            }
+                          },
+                          itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
                         const PopupMenuItem<String>(
                           value: 'edit',
                           child: ListTile(leading: Icon(Icons.edit), title: Text('Edit'))
@@ -100,7 +102,9 @@ class CourseListScreen extends StatelessWidget {
                           value: 'delete',
                           child: ListTile(leading: Icon(Icons.delete, color: Colors.red), title: Text('Delete', style: TextStyle(color: Colors.red)))
                         ),
-                      ],
+                          ],
+                        );
+                      },
                     ),
                   ),
                 )
@@ -127,4 +131,4 @@ class CourseListScreen extends StatelessWidget {
       ).animate().scale(delay: 500.ms),
     );
   }
-} 
+}

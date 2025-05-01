@@ -17,7 +17,8 @@ class Task {
   // Add time log list
   final List<TimeLogEntry> timeLog;
   final DateTime createdAt; // <<< Add createdAt field
-  // Add other fields later if needed (priority, notes, etc.)
+  final int? importance; // <<< Add importance field (e.g., 1=Low, 2=Medium, 3=High)
+  // Add other fields later if needed (notes, etc.)
 
   Task({
     required this.title,
@@ -29,6 +30,7 @@ class Task {
     this.pointsPossible, // Add to constructor
     List<TimeLogEntry>? timeLog, // Add to constructor
     DateTime? createdAt, // <<< Add to constructor
+    this.importance, // <<< Add importance to constructor
     String? id, // Allow providing an ID for updates
   }) : id = id ?? const Uuid().v4(),
        timeLog = timeLog ?? const [],
@@ -49,6 +51,7 @@ class Task {
     ValueGetter<double?>? pointsPossible,
     List<TimeLogEntry>? timeLog, // Add timeLog
     DateTime? createdAt,
+    int? importance, // <<< Add importance to copyWith
   }) {
     return Task(
       id: id ?? this.id,
@@ -61,6 +64,7 @@ class Task {
       pointsPossible: pointsPossible != null ? pointsPossible() : this.pointsPossible,
       timeLog: timeLog ?? this.timeLog, // Add timeLog
       createdAt: createdAt ?? this.createdAt, // Include in copyWith
+      importance: importance ?? this.importance, // <<< Add importance to copyWith
     );
   }
 
@@ -82,7 +86,9 @@ class Task {
     'pointsEarned': pointsEarned, // Add to JSON
     'pointsPossible': pointsPossible, // Add to JSON
     // Convert TimeLogEntry list to JSON list
-    'timeLog': timeLog.map((entry) => entry.toJson()).toList(), 
+    'timeLog': timeLog.map((entry) => entry.toJson()).toList(),
+    'createdAt': createdAt.toIso8601String(), // <<< Add createdAt to JSON
+    'importance': importance, // <<< Add importance to JSON
   };
 
   factory Task.fromJson(Map<String, dynamic> json) {
@@ -111,6 +117,7 @@ class Task {
       pointsPossible: (json['pointsPossible'] as num?)?.toDouble(),
       timeLog: parsedTimeLog, // Assign parsed list
       createdAt: DateTime.parse(json['createdAt'] as String), // Parse createdAt
+      importance: json['importance'] as int?, // <<< Parse importance (nullable int)
     );
   }
   // --- End JSON Conversion ---
@@ -129,8 +136,9 @@ class Task {
       // 'completedAt' might not be stored directly; could be inferred or added
       'pointsEarned': pointsEarned,
       'pointsPossible': pointsPossible,
-      'timeLogged': timeLogJson, // Store timeLog as JSON string 
+      'timeLogged': timeLogJson, // Store timeLog as JSON string
       'createdAt': createdAt.toIso8601String(), // Store createdAt
+      'importance': importance, // <<< Add importance to DB map
       // 'user_id' is added by DatabaseHelper
     };
   }
@@ -172,7 +180,8 @@ class Task {
       pointsPossible: (map['pointsPossible'] as num?)?.toDouble(),
       timeLog: parsedTimeLog, // Use parsed timeLog
       createdAt: DateTime.parse(map['createdAt'] as String), // Parse createdAt
+      importance: map['importance'] as int?, // <<< Parse importance from DB map
     );
   }
   // --- End Database Map Conversion ---
-} 
+}
