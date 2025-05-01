@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart'; // Import Provider
-import '../providers/theme_provider.dart'; // Import ThemeProvider
-import 'package:table_calendar/table_calendar.dart'; // Import for StartingDayOfWeek
+// Import ThemeProvider
+// Import for StartingDayOfWeek
 import '../providers/settings_provider.dart'; // Import SettingsProvider
-import 'package:intl/intl.dart'; // Import intl
+// Import intl
 import '../themes/app_themes.dart'; // <<< Import AppTheme enum
+import '../providers/auth_provider.dart'; // Import AuthProvider for logout
+import 'theme_selection_screen.dart';
+import 'profile_screen.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -16,7 +19,11 @@ class SettingsScreen extends StatelessWidget {
       case AppTheme.dark: return 'Dark (Default)';
       case AppTheme.solarizedLight: return 'Solarized Light';
       case AppTheme.solarizedDark: return 'Solarized Dark';
-      // Add cases for other themes if needed
+      case AppTheme.everforest: return 'Everforest';
+      case AppTheme.zenburn: return 'Zenburn';
+      case AppTheme.palenight: return 'Palenight';
+      case AppTheme.nord: return 'Nord';
+      case AppTheme.dracula: return 'Dracula';
     }
   }
 
@@ -36,187 +43,186 @@ class SettingsScreen extends StatelessWidget {
     onDateSelected(pickedDate); 
   }
 
+  // Handle logout
+  void _showLogoutConfirmation(BuildContext context) {
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    
+    showDialog(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          title: const Text('Log Out'),
+          content: const Text('Are you sure you want to log out?'),
+          actions: [
+            TextButton(
+              child: const Text('Cancel'),
+              onPressed: () => Navigator.pop(dialogContext),
+            ),
+            TextButton(
+              child: const Text('Log Out'),
+              onPressed: () async {
+                Navigator.pop(dialogContext); // Close dialog
+                await authProvider.logout(); // Call async logout
+                
+                // Navigate back to login screen
+                if (context.mounted) {
+                  Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
+                }
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    // Get providers
-    final themeProvider = Provider.of<ThemeProvider>(context);
+    final theme = Theme.of(context);
+    final authProvider = Provider.of<AuthProvider>(context);
     final settingsProvider = Provider.of<SettingsProvider>(context);
-    // Removed seedColor logic
-    // final currentSeedColor = themeProvider.seedColor;
-
-    // Format dates for display
-    final DateFormat formatter = DateFormat.yMMMd(); // e.g., Sep 5, 2024
-    final String startDateText = settingsProvider.termStartDate == null 
-        ? 'Not Set' 
-        : formatter.format(settingsProvider.termStartDate!);
-    final String endDateText = settingsProvider.termEndDate == null 
-        ? 'Not Set' 
-        : formatter.format(settingsProvider.termEndDate!);
-
-    final Color surfaceColor = Theme.of(context).colorScheme.surface;
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Settings'),
-         backgroundColor: surfaceColor.withOpacity(0.90),
+        backgroundColor: theme.colorScheme.surface.withOpacity(0.90),
          elevation: 0,
          surfaceTintColor: Colors.transparent,
       ),
       body: ListView(
-        padding: const EdgeInsets.symmetric(vertical: 16.0), // Add vertical padding
         children: [
-          // --- Theme Settings Section ---
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0),
-            child: Text('Appearance', style: Theme.of(context).textTheme.titleLarge),
-          ),
-          const SizedBox(height: 8),
-          // RadioListTiles for AppTheme selection
-          RadioListTile<AppTheme>(
-            title: Text(_appThemeToString(AppTheme.light)),
-            value: AppTheme.light,
-            groupValue: themeProvider.currentTheme, // Use currentTheme
-            onChanged: (AppTheme? value) {
-              if (value != null) {
-                themeProvider.setTheme(value); // Use setTheme
-              }
-            },
-          ),
-          RadioListTile<AppTheme>(
-            title: Text(_appThemeToString(AppTheme.dark)),
-            value: AppTheme.dark,
-            groupValue: themeProvider.currentTheme,
-             onChanged: (AppTheme? value) {
-              if (value != null) {
-                themeProvider.setTheme(value);
-              }
-            },
-          ),
-           RadioListTile<AppTheme>(
-            title: Text(_appThemeToString(AppTheme.solarizedLight)),
-            value: AppTheme.solarizedLight,
-            groupValue: themeProvider.currentTheme,
-             onChanged: (AppTheme? value) {
-              if (value != null) {
-                themeProvider.setTheme(value);
-              }
-            },
-          ),
-          RadioListTile<AppTheme>(
-            title: Text(_appThemeToString(AppTheme.solarizedDark)),
-            value: AppTheme.solarizedDark,
-            groupValue: themeProvider.currentTheme,
-             onChanged: (AppTheme? value) {
-              if (value != null) {
-                themeProvider.setTheme(value);
-              }
-            },
-          ),
-          // Remove System Default for now as ThemeProvider doesn't handle it explicitly
-          // RadioListTile<ThemeMode>(...
-          const Divider(indent: 16, endIndent: 16),
-          
-          // --- Accent Color Section (REMOVED) ---
-          // Padding(... Accent Color ...),
-          // Padding(... Wrap ...),
-          // const Divider(indent: 16, endIndent: 16, height: 32), 
-          
-          // --- Calendar Settings Section ---
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0),
-            child: Text('Calendar', style: Theme.of(context).textTheme.titleLarge),
-          ),
-          const SizedBox(height: 8),
-           RadioListTile<StartingDayOfWeek>(
-            title: const Text('Start Week on Monday'),
-            value: StartingDayOfWeek.monday,
-            groupValue: settingsProvider.startingDayOfWeek,
-            onChanged: (StartingDayOfWeek? value) {
-              if (value != null) {
-                settingsProvider.setStartingDayOfWeek(value);
-              }
-            },
-          ),
-          RadioListTile<StartingDayOfWeek>(
-            title: const Text('Start Week on Sunday'),
-            value: StartingDayOfWeek.sunday,
-            groupValue: settingsProvider.startingDayOfWeek,
-            onChanged: (StartingDayOfWeek? value) {
-              if (value != null) {
-                settingsProvider.setStartingDayOfWeek(value);
-              }
-            },
-          ),
-          // Add more calendar options later (e.g., format toggle)
-          const Divider(indent: 16, endIndent: 16),
-          
-          // --- Academic Term Section ---
-           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0),
-            child: Text('Academic Term', style: Theme.of(context).textTheme.titleLarge),
-          ),
-          const SizedBox(height: 8),
+          // Profile Settings Section
           ListTile(
-            leading: const Icon(Icons.date_range_outlined),
-            title: const Text('Term Start Date'),
-            trailing: Text(startDateText),
-            onTap: () => _pickDate(
-              context,
-              settingsProvider.termStartDate,
-              settingsProvider.setTermStartDate, // Pass method reference
-             ),
+            leading: const Icon(Icons.person_outline),
+            title: const Text('Profile Settings'),
+            subtitle: const Text('Edit profile picture and personal info'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const ProfileScreen()),
+              );
+            },
           ),
-           ListTile(
-            leading: const Icon(Icons.event_available_outlined),
-            title: const Text('Term End Date'),
-            trailing: Text(endDateText),
-            onTap: () => _pickDate(
-              context,
-              settingsProvider.termEndDate,
-              settingsProvider.setTermEndDate, // Pass method reference
-             ),
-          ),
-          const Divider(indent: 16, endIndent: 16),
-          
-          // --- Notifications Section ---
-           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0),
-            child: Text('Notifications', style: Theme.of(context).textTheme.titleLarge),
-          ),
-          const SizedBox(height: 8),
-           SwitchListTile(
-             title: const Text('Task Due Reminders'),
-             subtitle: const Text('Notify before tasks are due'), // Placeholder subtitle
-             value: settingsProvider.taskRemindersEnabled,
-             onChanged: settingsProvider.setTaskRemindersEnabled,
-             secondary: const Icon(Icons.task_alt_outlined),
-           ),
-           SwitchListTile(
-             title: const Text('Class Start Reminders'),
-              subtitle: const Text('Notify before classes start'), // Placeholder subtitle
-             value: settingsProvider.classRemindersEnabled,
-             onChanged: settingsProvider.setClassRemindersEnabled,
-             secondary: const Icon(Icons.schedule_outlined),
-           ),
-          const Divider(indent: 16, endIndent: 16),
+          const Divider(),
 
-          // --- Placeholder Sections ---
+          // Theme Settings Section
+          ListTile(
+            leading: const Icon(Icons.palette_outlined),
+            title: const Text('Theme'),
+            subtitle: const Text('Customize app appearance'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const ThemeSelectionScreen()),
+              );
+            },
+          ),
+          const Divider(),
+
+          // Notification Settings
+          SwitchListTile(
+            secondary: const Icon(Icons.notifications_outlined),
+            title: const Text('Notifications'),
+            subtitle: const Text('Enable task reminders'),
+            value: settingsProvider.notificationsEnabled,
+            onChanged: (bool value) {
+              settingsProvider.setNotificationsEnabled(value);
+            },
+          ),
+          const Divider(),
+
+          // Account Settings Section
           const ListTile(
-             leading: Icon(Icons.notifications_none), // Use outlined icons for inactive settings
-             title: Text('Notifications (Coming Soon)')
+            leading: Icon(Icons.person_outline),
+            title: Text('Account'),
+          ),
+          ListTile(
+            leading: const Icon(Icons.delete_outline, color: Colors.red),
+            title: const Text('Delete Account', style: TextStyle(color: Colors.red)),
+            onTap: () => _showDeleteAccountDialog(context, authProvider),
+          ),
+
+          // Logout at the bottom
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: ElevatedButton.icon(
+              onPressed: () => _showLogoutDialog(context, authProvider),
+              icon: const Icon(Icons.logout),
+              label: const Text('Logout'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: theme.colorScheme.error,
+                foregroundColor: theme.colorScheme.onError,
+                minimumSize: const Size(double.infinity, 50),
+              ),
             ),
-           const Divider(indent: 16, endIndent: 16),
-            const ListTile(
-             leading: Icon(Icons.calendar_month_outlined),
-             title: Text('Calendar (Coming Soon)')
-            ),
-            const Divider(indent: 16, endIndent: 16),
-             const ListTile(
-             leading: Icon(Icons.school_outlined),
-             title: Text('Academic Terms (Coming Soon)')
-            ),
+          ),
         ],
       ),
     );
+  }
+
+  Future<void> _showLogoutDialog(BuildContext context, AuthProvider authProvider) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Confirm Logout'),
+        content: const Text('Are you sure you want to log out?'),
+        actions: [
+          TextButton(
+            child: const Text('Cancel'),
+            onPressed: () => Navigator.of(ctx).pop(false),
+          ),
+          TextButton(
+            child: const Text('Logout'),
+            onPressed: () => Navigator.of(ctx).pop(true),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && context.mounted) {
+      await authProvider.logout();
+    }
+  }
+
+  Future<void> _showDeleteAccountDialog(BuildContext context, AuthProvider authProvider) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete Account'),
+        content: const Text(
+          'Are you sure you want to delete your account? This action cannot be undone and all your data will be permanently deleted.',
+        ),
+        actions: [
+          TextButton(
+            child: const Text('Cancel'),
+            onPressed: () => Navigator.of(ctx).pop(false),
+          ),
+          TextButton(
+            child: const Text('Delete', style: TextStyle(color: Colors.red)),
+            onPressed: () => Navigator.of(ctx).pop(true),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && context.mounted) {
+      // Show loading indicator
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) => const Center(child: CircularProgressIndicator()),
+      );
+
+      try {
+        await authProvider.deleteAccount();
+      } finally {
+        if (context.mounted) {
+          Navigator.of(context).pop(); // Remove loading indicator
+        }
+      }
+    }
   }
 } 

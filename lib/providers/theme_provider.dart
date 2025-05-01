@@ -12,14 +12,93 @@ class ThemeProvider with ChangeNotifier {
     _loadThemePreference();
   }
 
-  ThemeData get themeData {
-    // Determine initial theme based on system brightness if necessary
-    // This check might be better placed elsewhere depending on logic
-    // if (_currentTheme == AppTheme.system) { ... }
-    return AppThemes.getThemeData(_currentTheme);
-  }
+  ThemeData get themeData => getThemeData(_currentTheme);
 
   AppTheme get currentTheme => _currentTheme;
+
+  static ThemeData getThemeData(AppTheme theme) {
+    switch (theme) {
+      case AppTheme.light:
+        return ThemeData.light(useMaterial3: true).copyWith(
+          colorScheme: ColorScheme.fromSeed(
+            seedColor: Colors.blue,
+            brightness: Brightness.light,
+          ),
+        );
+      case AppTheme.dark:
+        return ThemeData.dark(useMaterial3: true).copyWith(
+          colorScheme: ColorScheme.fromSeed(
+            seedColor: Colors.blue,
+            brightness: Brightness.dark,
+          ),
+        );
+      case AppTheme.solarizedLight:
+        return ThemeData.light(useMaterial3: true).copyWith(
+          colorScheme: ColorScheme.fromSeed(
+            seedColor: const Color(0xFF859900),
+            brightness: Brightness.light,
+            background: const Color(0xFFFDF6E3),
+            surface: const Color(0xFFEEE8D5),
+          ),
+        );
+      case AppTheme.solarizedDark:
+        return ThemeData.dark(useMaterial3: true).copyWith(
+          colorScheme: ColorScheme.fromSeed(
+            seedColor: const Color(0xFF859900),
+            brightness: Brightness.dark,
+            background: const Color(0xFF002B36),
+            surface: const Color(0xFF073642),
+          ),
+        );
+      case AppTheme.everforest:
+        return ThemeData.dark(useMaterial3: true).copyWith(
+          colorScheme: ColorScheme.fromSeed(
+            seedColor: const Color(0xFFA7C080),
+            brightness: Brightness.dark,
+            background: const Color(0xFF2D353B),
+            surface: const Color(0xFF343F44),
+          ),
+        );
+      case AppTheme.zenburn:
+        return ThemeData.dark(useMaterial3: true).copyWith(
+          colorScheme: ColorScheme.fromSeed(
+            seedColor: const Color(0xFFDCA3A3),
+            brightness: Brightness.dark,
+            background: const Color(0xFF3F3F3F),
+            surface: const Color(0xFF494949),
+          ),
+        );
+      case AppTheme.palenight:
+        return ThemeData.dark(useMaterial3: true).copyWith(
+          colorScheme: ColorScheme.fromSeed(
+            seedColor: const Color(0xFF82AAFF),
+            brightness: Brightness.dark,
+            background: const Color(0xFF292D3E),
+            surface: const Color(0xFF34324A),
+          ),
+        );
+      case AppTheme.nord:
+        return ThemeData.dark(useMaterial3: true).copyWith(
+          colorScheme: ColorScheme.fromSeed(
+            seedColor: const Color(0xFF88C0D0),
+            brightness: Brightness.dark,
+            background: const Color(0xFF2E3440),
+            surface: const Color(0xFF3B4252),
+          ),
+        );
+      case AppTheme.dracula:
+        return ThemeData.dark(useMaterial3: true).copyWith(
+          colorScheme: ColorScheme.fromSeed(
+            seedColor: const Color(0xFFBD93F9),
+            brightness: Brightness.dark,
+            background: const Color(0xFF282A36),
+            surface: const Color(0xFF44475A),
+          ),
+        );
+      default:
+        return ThemeData.light(useMaterial3: true);
+    }
+  }
 
   Future<void> _loadThemePreference() async {
     final prefs = await SharedPreferences.getInstance();

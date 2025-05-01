@@ -3,6 +3,8 @@ import 'package:collection/collection.dart'; // For groupBy and sorting
 import 'package:table_calendar/table_calendar.dart'; // Import table_calendar
 import 'package:provider/provider.dart'; // Import Provider
 import 'package:flutter/cupertino.dart'; // Import Cupertino library
+import 'package:fl_chart/fl_chart.dart'; // <<< Import fl_chart
+import 'dart:io'; // Import dart:io for platform checking
 import '../models/course.dart';
 import '../models/schedule_entry.dart';
 import '../models/task.dart'; // Import Task model
@@ -94,19 +96,22 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
     return completedTasks / courseTasks.length;
   }
 
-  // --- Event Loader for TableCalendar ---
+  // --- Event Loader for TableCalendar (ensure context is passed if needed) ---
   List<Object> _getEventsForDay(BuildContext context, DateTime day) {
-    final tasks = Provider.of<TasksProvider>(context, listen: false).tasks;
-    List<Object> events = [];
-    final dayOfWeek = DayOfWeek.values[day.weekday - 1];
-    events.addAll(widget.courses.where((course) {
-      return course.schedule.any((entry) => entry.day == dayOfWeek);
-    }));
-    events.addAll(tasks.where((task) {
-      if (task.dueDate == null) return false;
-      return isSameDay(task.dueDate!, day);
-    }));
-    return events;
+     // Use listen: false if just reading data within the loader
+     final tasks = Provider.of<TasksProvider>(context, listen: false).tasks;
+     List<Object> events = [];
+     final dayOfWeek = DayOfWeek.values[day.weekday - 1];
+     // Filter courses based on schedule
+     events.addAll(widget.courses.where((course) {
+       return course.schedule.any((entry) => entry.day == dayOfWeek);
+     }));
+     // Filter tasks based on due date
+     events.addAll(tasks.where((task) {
+       if (task.dueDate == null) return false;
+       return isSameDay(task.dueDate!, day);
+     }));
+     return events;
   }
 
   // --- Calculation Helpers ---
@@ -115,7 +120,9 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
     final tasks = Provider.of<TasksProvider>(context, listen: false).tasks;
     final now = DateTime.now();
     return tasks.where((task) =>
-      task.dueDate != null && isSameDay(task.dueDate!, now)
+      !task.isComplete && // Only show incomplete tasks
+      task.dueDate != null && 
+      isSameDay(task.dueDate!, now)
     ).toList();
   }
 
@@ -123,20 +130,21 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
     final tasks = Provider.of<TasksProvider>(context, listen: false).tasks;
     final settingsProvider = Provider.of<SettingsProvider>(context, listen: false);
     final now = DateTime.now();
-    final startOfWeek = now.subtract(Duration(days: now.weekday - settingsProvider.startingDayOfWeek.index)); // Assumes monday=0, sunday=6
-    // Use index from StartingDayOfWeek enum provided by table_calendar
-    // Monday = 1 -> index 0
-    // Sunday = 7 -> index 6
+    
+    // Calculate the start and end of the current week based on user's settings
     int startOffset = settingsProvider.startingDayOfWeek.index; // 0 for Monday, 6 for Sunday
     final startOfWeekDate = now.subtract(Duration(days: (now.weekday - 1 - startOffset + 7) % 7));
     final endOfWeekDate = startOfWeekDate.add(const Duration(days: 6));
 
     return tasks.where((task) {
-      if (task.dueDate == null) return false;
-      // Exclude today
+      if (task.dueDate == null || task.isComplete) return false; // Skip completed or undated tasks
+      
+      // Exclude tasks due today and overdue tasks
       if (isSameDay(task.dueDate!, now)) return false;
-      // Check if due date is within the current week (inclusive start, inclusive end)
-      return !task.dueDate!.isBefore(startOfWeekDate) &&
+      if (task.dueDate!.isBefore(DateTime(now.year, now.month, now.day))) return false;
+      
+      // Check if due date is within the current week (after today, before end of week)
+      return task.dueDate!.isAfter(now) && 
              !task.dueDate!.isAfter(endOfWeekDate);
     }).toList();
   }
@@ -154,24 +162,301 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
 
   // Access SettingsProvider within build or where context is available
   late SettingsProvider settingsProvider;
+  // Cache for chart data to avoid recalculation on every build unless tasks change
+  Map<DateTime, int>? _weeklyCompletionDataCache;
+  Map<String, int>? _taskStatusDataCache;
+
+  @override
+  void initState() {
+    super.initState();
+    // Initialize selected day to today if needed for initial focus
+    _selectedDay = _focusedDay;
+     // Listen to TasksProvider to clear cache when tasks change
+     // No, Provider updates will trigger rebuild anyway. Caching might be premature.
+  }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // Initialize settingsProvider here as context is available
     settingsProvider = Provider.of<SettingsProvider>(context, listen: false);
+     // TasksProvider changes will trigger a rebuild via the Provider.of in build().
+     // We can calculate chart data within build or dedicated helper methods called from build.
   }
 
    @override
   void dispose() {
-    _detailsPageController?.dispose(); // Dispose the controller
+    _detailsPageController?.dispose();
     super.dispose();
   }
 
+  // --- Chart Helper Methods ---
+
+  // Helper to build legend widgets for the pie chart
+  Widget _buildLegendItem(Color color, String text) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 10,
+          height: 10,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: color,
+          ),
+        ),
+        const SizedBox(width: 6),
+        Text(text, style: const TextStyle(fontSize: 12)),
+      ],
+    );
+  }
+
+  Widget _buildWeeklyCompletionChart(BuildContext context, List<Task> tasks) {
+    final theme = Theme.of(context);
+    final primaryColor = theme.colorScheme.primary;
+    final onSurfaceVariant = theme.colorScheme.onSurfaceVariant;
+    final now = DateTime.now();
+    final today = DateUtils.dateOnly(now);
+
+    // Calculate completions for the last 7 days
+    Map<DateTime, int> dailyCompletions = {};
+    for (int i = 6; i >= 0; i--) {
+      final date = today.subtract(Duration(days: i));
+      dailyCompletions[date] = 0;
+    }
+
+    int maxCount = 0;
+    for (final task in tasks) {
+      if (task.isComplete && task.completedAt != null) {
+        final completedDate = DateUtils.dateOnly(task.completedAt!);
+        if (dailyCompletions.containsKey(completedDate)) {
+          dailyCompletions[completedDate] = dailyCompletions[completedDate]! + 1;
+          if (dailyCompletions[completedDate]! > maxCount) {
+            maxCount = dailyCompletions[completedDate]!;
+          }
+        }
+      }
+    }
+
+    // Ensure y-axis shows at least 1, even if maxCount is 0
+    final maxY = (maxCount < 5) ? 5.0 : (maxCount + 1).toDouble();
+
+    final List<BarChartGroupData> barGroups = [];
+    dailyCompletions.entries.toList().asMap().forEach((index, entry) {
+       final date = entry.key;
+       final count = entry.value;
+        barGroups.add(
+          BarChartGroupData(
+            x: index, // Use index for x-axis position
+            barRods: [
+              BarChartRodData(
+                toY: count.toDouble(),
+                color: primaryColor,
+                width: 16,
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(4),
+                  topRight: Radius.circular(4),
+                )
+              ),
+            ],
+          ),
+        );
+    });
+
+     if (barGroups.isEmpty) {
+       return const Center(child: Text("Not enough data for weekly chart."));
+     }
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return BarChart(
+          BarChartData(
+            maxY: maxY,
+            barTouchData: BarTouchData(
+              touchTooltipData: BarTouchTooltipData(
+                tooltipBgColor: theme.colorScheme.surfaceContainerHighest,
+                getTooltipItem: (group, groupIndex, rod, rodIndex) {
+                  final date = dailyCompletions.keys.elementAt(group.x.toInt());
+                  final count = rod.toY.toInt();
+                  return BarTooltipItem(
+                    '${DateFormat.Md().format(date)}\n', // Format date as Month/Day
+                    TextStyle(
+                      color: theme.colorScheme.onSurfaceVariant, // Use theme color
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                    ),
+                    children: <TextSpan>[
+                      TextSpan(
+                        text: '$count completed',
+                        style: TextStyle(
+                          color: theme.colorScheme.onSurfaceVariant, // Use theme color
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
+              touchCallback: (FlTouchEvent event, barTouchResponse) {
+                // Handle touch events if needed
+              },
+            ),
+            titlesData: FlTitlesData(
+              show: true,
+              rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+              topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+              bottomTitles: AxisTitles(
+                sideTitles: SideTitles(
+                  showTitles: true,
+                  getTitlesWidget: (double value, TitleMeta meta) {
+                    // Simplified title widget compatible with older versions
+                    final index = value.toInt();
+                    if (index < 0 || index >= dailyCompletions.length) {
+                      return Container();
+                    }
+                    final date = dailyCompletions.keys.elementAt(index);
+                    return Text(
+                      DateFormat.E().format(date), // 'E' gives abbreviated day name
+                      style: TextStyle(
+                        color: onSurfaceVariant, // Use theme color
+                        fontWeight: FontWeight.bold,
+                        fontSize: 10
+                      )
+                    );
+                  },
+                  reservedSize: 22, // Adjust reserved size for labels
+                ),
+              ),
+              leftTitles: AxisTitles(
+                sideTitles: SideTitles(
+                  showTitles: true,
+                  reservedSize: 28, // Adjust reserved size for y-axis labels
+                  interval: maxY / 5 > 1 ? (maxY / 5).floor().toDouble() : 1, // Dynamic interval, at least 1
+                  getTitlesWidget: (double value, TitleMeta meta) {
+                    // Simplified title widget compatible with older versions
+                    if (value % 1 != 0 && value != 0) return Container(); // Only show integer values or 0
+                    return Text(
+                      value.toInt().toString(),
+                      style: TextStyle(
+                        color: onSurfaceVariant, // Use theme color
+                        fontWeight: FontWeight.bold,
+                        fontSize: 10
+                      ),
+                      textAlign: TextAlign.right,
+                    );
+                  },
+                ),
+              ),
+            ),
+            borderData: FlBorderData(
+              show: false, // Remove border
+            ),
+            barGroups: barGroups,
+            gridData: const FlGridData(show: false), // Hide grid lines
+          ),
+        );
+      }
+    );
+  }
+
+  // Build Pie Chart for Task Status
+  Widget _buildTaskStatusPieChart(BuildContext context, Map<String, int> taskStatusData) {
+     final theme = Theme.of(context);
+     final colors = [
+       theme.colorScheme.primary, // Completed
+       theme.colorScheme.secondary, // Due Today
+       theme.colorScheme.tertiary, // Due This Week
+       theme.colorScheme.error,   // Overdue
+       theme.colorScheme.surfaceContainerHighest, // Other/Pending
+     ];
+     final statusLabels = [
+       'Completed',
+       'Due Today',
+       'Due This Week',
+       'Overdue',
+       'Other/Pending'
+     ];
+
+     int totalTasks = taskStatusData.values.fold(0, (sum, count) => sum + count);
+
+     if (totalTasks == 0) {
+       return const Center(child: Text("No task data for pie chart."));
+     }
+
+     final List<PieChartSectionData> sections = [];
+     final List<Widget> legendItems = [];
+     int colorIndex = 0;
+
+     taskStatusData.forEach((status, count) {
+       if (count > 0) { // Only add sections for non-zero counts
+         final isTouched = false; // Placeholder for touch interaction if needed later
+         final fontSize = isTouched ? 16.0 : 12.0;
+         final radius = isTouched ? 60.0 : 50.0;
+         final value = (count / totalTasks) * 100; // Calculate percentage
+         final color = colors[colorIndex % colors.length];
+
+         sections.add(PieChartSectionData(
+           color: color,
+           value: value,
+           title: '${value.toStringAsFixed(0)}%', // Show percentage
+           radius: radius,
+           titleStyle: TextStyle(
+             fontSize: fontSize,
+             fontWeight: FontWeight.bold,
+             color: theme.colorScheme.onPrimary, // Text color on the section
+             shadows: [Shadow(color: Colors.black.withOpacity(0.5), blurRadius: 2)] // Add shadow for better readability
+           ),
+           showTitle: true, // Show percentage on slice
+         ));
+          // Add corresponding legend item
+         legendItems.add(_buildLegendItem(color, statusLabels[colorIndex]));
+       }
+        colorIndex++;
+     });
+
+
+     return LayoutBuilder(
+       builder: (context, constraints) {
+         return Column( // Use Column to place legend below chart
+           mainAxisAlignment: MainAxisAlignment.center,
+           mainAxisSize: MainAxisSize.min,
+           children: [
+             SizedBox( // Constrain the PieChart size
+               height: 150, // Adjust height as needed
+               width: constraints.maxWidth, // Use available width
+               child: PieChart(
+                 PieChartData(
+                   pieTouchData: PieTouchData(
+                     touchCallback: (FlTouchEvent event, pieTouchResponse) {
+                       // Handle touch interactions if needed
+                     },
+                   ),
+                   borderData: FlBorderData(show: false),
+                   sectionsSpace: 2, // Space between sections
+                   centerSpaceRadius: 40, // Make it a donut chart
+                   sections: sections,
+                 ),
+               ),
+             ),
+             const SizedBox(height: 16), // Space between chart and legend
+             Wrap( // Use Wrap for the legend items for responsiveness
+               spacing: 12.0, // Horizontal space between items
+               runSpacing: 4.0, // Vertical space between lines
+               alignment: WrapAlignment.center,
+               children: legendItems,
+             ),
+           ],
+         );
+       }
+     );
+  }
+
+  // --- Build Method ---
   @override
   Widget build(BuildContext context) {
-    // Get tasks from provider here
-    final tasksProvider = Provider.of<TasksProvider>(context); // listen: true is default
+    // Get providers
+    final tasksProvider = Provider.of<TasksProvider>(context); // listen: true
+    final settingsProvider = Provider.of<SettingsProvider>(context); // listen: true for theme/settings changes
     final tasks = tasksProvider.tasks;
     final todaysSchedule = _getTodaysSchedule();
     final theme = Theme.of(context);
@@ -183,7 +468,7 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
     final overdueTasks = _getOverdueTasks(context);
     final activeCoursesCount = widget.courses.length;
     final totalTasks = tasks.length;
-    final completedTasks = tasks.where((task) => task.isComplete).length;
+    final completedTasksCount = tasks.where((task) => task.isComplete).length;
 
     return Scaffold(
       appBar: AppBar(
@@ -192,243 +477,214 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
         elevation: 0,
         surfaceTintColor: Colors.transparent,
       ),
-      body: ListView( // Use ListView to allow scrolling multiple sections
+      body: ListView( // Keep ListView for scrolling
         padding: const EdgeInsets.all(16.0),
         children: [
           // --- Summary Cards Section ---
-           Text("Summary", style: textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold)),
-           const SizedBox(height: 12.0),
-           Wrap(
-             spacing: 12.0, // Horizontal space between cards
-             runSpacing: 12.0, // Vertical space between rows
-             children: [
-               _buildSummaryCard(context, 'Courses Active', activeCoursesCount.toString(), Icons.book_outlined),
-               _buildSummaryCard(context, 'Tasks Due Today', tasksDueToday.length.toString(), Icons.today_outlined),
-               _buildSummaryCard(context, 'Due This Week', tasksDueThisWeek.length.toString(), Icons.date_range_outlined),
-               _buildSummaryCard(context, 'Overdue Tasks', overdueTasks.length.toString(), Icons.warning_amber_rounded,
-                                 valueColor: overdueTasks.isNotEmpty ? theme.colorScheme.error : null),
-             ],
-           ),
-           const SizedBox(height: 24.0), // Space before next section
+          Text("Summary", style: textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold)),
+          const SizedBox(height: 12.0),
+          Center(
+            child: Wrap(
+              alignment: WrapAlignment.center,
+              spacing: 12.0,
+              runSpacing: 12.0,
+              children: [
+                _buildSummaryCard(context, 'Courses Active', activeCoursesCount.toString(), Icons.book_outlined),
+                _buildSummaryCard(context, 'Due Today', tasksDueToday.length.toString(), Icons.today_outlined, onTap: () {
+                  Navigator.push(context, CupertinoPageRoute(builder: (_) => TaskListScreen(courses: widget.courses, filter: TaskFilter.dueToday)));
+                }),
+                _buildSummaryCard(context, 'Due This Week', tasksDueThisWeek.length.toString(), Icons.date_range_outlined, onTap: () {
+                  Navigator.push(context, CupertinoPageRoute(builder: (_) => TaskListScreen(courses: widget.courses, filter: TaskFilter.dueThisWeek)));
+                }),
+                _buildSummaryCard(context, 'Overdue', overdueTasks.length.toString(), Icons.warning_amber_rounded,
+                                valueColor: overdueTasks.isNotEmpty ? theme.colorScheme.error : null, onTap: () {
+                  if (overdueTasks.isNotEmpty) {
+                    Navigator.push(context, CupertinoPageRoute(builder: (_) => TaskListScreen(courses: widget.courses, filter: TaskFilter.overdue)));
+                  }
+                }),
+                _buildSummaryCard(context, 'Completed Tasks', completedTasksCount.toString(), Icons.check_circle_outline,
+                                valueColor: completedTasksCount > 0 ? Colors.green[700] : null),
+              ],
+            ),
+          ),
+          const SizedBox(height: 24.0),
 
-          // --- Weekly View Section ---
-           Text("Weekly View", style: textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold)),
-           const SizedBox(height: 12.0),
-           Card(
-             elevation: 0.5,
-             child: Padding(
-               padding: const EdgeInsets.only(bottom: 8.0),
-               // Wrap TableCalendar with AnimatedSize
-               child: AnimatedSize(
-                 duration: const Duration(milliseconds: 300),
-                 curve: Curves.easeInOut,
-                 child: TableCalendar(
-                    firstDay: DateTime.utc(2020, 1, 1), // Define reasonable range
-                    lastDay: DateTime.utc(2030, 12, 31),
-                    focusedDay: _focusedDay,
-                    calendarFormat: _calendarFormat,
-                    startingDayOfWeek: settingsProvider.startingDayOfWeek,
-                    selectedDayPredicate: (day) {
-                      return isSameDay(_selectedDay, day);
-                    },
-                    onDaySelected: (selectedDay, focusedDay) {
-                      // Always show the popup when a day is tapped
-                      _showDayDetailsPopup(context, selectedDay);
-
-                      // Only update state if the selected day has actually changed
-                      if (!isSameDay(_selectedDay, selectedDay)) {
-                        setState(() {
-                          _selectedDay = selectedDay;
-                          _focusedDay = focusedDay; // Update focused day as well
-                        });
-                      } else {
-                         // If the same day is tapped, we might still want to ensure it's focused
-                         // although TableCalendar might handle this already.
-                         // Adding it defensively.
-                         if (!isSameDay(_focusedDay, focusedDay)) {
-                            setState(() {
-                                _focusedDay = focusedDay;
-                            });
-                         }
-                      }
-                    },
-                    // Implement onFormatChanged
-                    onFormatChanged: (format) {
-                       if (_calendarFormat != format) {
-                         setState(() {
-                           _calendarFormat = format;
-                         });
-                       }
-                    },
-                    onPageChanged: (focusedDay) {
-                      // Only update state if mounted to avoid errors during dispose
-                      if (mounted) {
-                        setState(() {
-                           _focusedDay = focusedDay;
-                        });
-                      }
-                    },
-                    eventLoader: (day) => _getEventsForDay(context, day),
-                    headerStyle: HeaderStyle(
-                      // Show format button
-                      formatButtonVisible: true,
-                      titleCentered: true,
-                      titleTextStyle: textTheme.titleMedium ?? const TextStyle(),
-                      // Optional: Customize format button text/icon
-                      // formatButtonTextStyle: ...,
-                      // formatButtonDecoration: ...,
-                      // formatButtonShowsNext: false, // default true
-                    ),
-                    calendarStyle: CalendarStyle(
-                       todayDecoration: BoxDecoration(
-                         color: theme.colorScheme.primary.withOpacity(0.5),
-                         shape: BoxShape.circle,
-                       ),
-                       selectedDecoration: BoxDecoration(
-                         color: theme.colorScheme.primary,
-                         shape: BoxShape.circle,
-                       ),
-                       // Style for marker(s)
-                       markerDecoration: BoxDecoration(
-                          color: theme.colorScheme.secondary, // Use secondary color for markers
-                          shape: BoxShape.circle,
-                       ),
-                     ),
-                    calendarBuilders: CalendarBuilders(), // Use default builders for now
-                  ),
-               ),
-             ),
-           ),
-           const SizedBox(height: 24.0),
-
-           // --- Today's Agenda Section ---
-          Text("Today's Agenda", style: textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold)),
-           const SizedBox(height: 12.0),
-           todaysSchedule.isEmpty
-            ? Card( // Use a card for better visual separation
-                elevation: 0.5, // Lower elevation
-                child: Padding(
-                  padding: EdgeInsets.all(16.0),
-                  child: Center(child: Text('Nothing scheduled for today! Enjoy your day.')),
-                ),
-              )
-            : Card(
-                elevation: 0.5, // Lower elevation
-               // clipBehavior: Clip.antiAlias, // Optional: ensures content respects rounded corners
-                child: ListView.separated(
-                  shrinkWrap: true, // Important inside another ListView
-                  physics: const NeverScrollableScrollPhysics(), // Disable scrolling for inner list
+          // --- Today's Agenda Section ---
+          if (todaysSchedule.isNotEmpty)
+             _buildSectionTitle(context, "Today's Agenda"),
+          if (todaysSchedule.isNotEmpty)
+             SizedBox(
+                height: 80, // Adjust height as needed
+                child: ListView.builder(
+                  scrollDirection: Axis.horizontal,
                   itemCount: todaysSchedule.length,
                   itemBuilder: (context, index) {
                     final item = todaysSchedule[index];
-                    return ListTile(
-                      leading: CircleAvatar(
-                        backgroundColor: item.courseColor,
-                        radius: 15,
-                      ),
-                      title: Text(item.courseName),
-                      trailing: Text(
-                         item.timeOfDay.format(context),
-                         style: textTheme.bodyMedium?.copyWith(color: theme.colorScheme.primary),
-                       ),
-                      // Add onTap later if needed
-                    );
+                    return _buildAgendaCard(context, item);
                   },
-                   separatorBuilder: (context, index) => const Divider(height: 1, indent: 16, endIndent: 16), // Add dividers
                 ),
-              ),
+             ),
+           if (todaysSchedule.isNotEmpty)
+              const SizedBox(height: 24.0),
 
-          // --- Course Progress Section ---
-           const SizedBox(height: 24.0),
-           Text("Course Progress", style: textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold)),
-           const SizedBox(height: 12.0),
-           widget.courses.isEmpty
-            ? const Card( // Handle case with no courses
-                child: Padding(
-                  padding: EdgeInsets.all(16.0),
-                  child: Center(child: Text('Add courses to track progress.')),
-                ),
-              )
-            : Card(
-                elevation: 0.5, // Lower elevation
-                // Build list of progress bars
-                 child: Padding(
-                   padding: const EdgeInsets.symmetric(vertical: 8.0), // Add padding top/bottom
-                   child: ListView.separated(
-                     shrinkWrap: true,
-                     physics: const NeverScrollableScrollPhysics(),
-                     itemCount: widget.courses.length,
-                     itemBuilder: (context, index) {
-                       final course = widget.courses[index];
-                       final progress = _calculateCourseProgress(context, course.id);
-                       // Wrap with InkWell for tap detection
-                       return InkWell(
-                          onTap: () {
-                             Navigator.of(context).push(CupertinoPageRoute(
-                               builder: (ctx) => CourseDetailScreen(
-                                 course: course,
-                                 onEditCourse: widget.onEditCourse, // Use the callback from widget
-                               ),
-                             ));
-                          },
-                          borderRadius: BorderRadius.circular(8.0), // Optional: for ink splash shape
-                          child: Padding(
-                           padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
-                           child: Column(
-                             crossAxisAlignment: CrossAxisAlignment.start,
-                             children: [
-                               Row(
-                                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                 children: [
-                                   Text(course.name, style: textTheme.titleMedium),
-                                   Text('${(progress * 100).toStringAsFixed(0)}%', style: textTheme.bodyMedium?.copyWith(color: theme.colorScheme.primary)),
-                                 ],
-                               ),
-                               const SizedBox(height: 6.0),
-                               LinearProgressIndicator(
-                                 value: progress,
-                                 backgroundColor: theme.colorScheme.surfaceVariant,
-                                 valueColor: AlwaysStoppedAnimation<Color>(course.colorValue),
-                                 minHeight: 6, // Make the bar slightly thicker
-                                 borderRadius: BorderRadius.circular(3), // Rounded corners
-                               ),
-                             ],
-                           ),
+
+          // --- Weekly View Section ---
+           _buildSectionTitle(context, "Weekly View"),
+           Card(
+             elevation: 0.5,
+              clipBehavior: Clip.antiAlias, // Prevents calendar bleeding out of card corners
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.0)),
+             child: Padding(
+               padding: const EdgeInsets.all(8.0),
+               child: AnimatedSize(
+                 duration: const Duration(milliseconds: 300),
+                 curve: Curves.easeInOut,
+                 alignment: Alignment.topCenter, // Add alignment for proper animation
+                 child: SizedBox(
+                   width: double.infinity, // Ensure full width
+                   child: TableCalendar(
+                      firstDay: DateTime.utc(DateTime.now().year - 1, 1, 1), // Adjusted range
+                      lastDay: DateTime.utc(DateTime.now().year + 1, 12, 31),
+                      focusedDay: _focusedDay,
+                      calendarFormat: _calendarFormat,
+                      startingDayOfWeek: settingsProvider.startingDayOfWeek,
+                      selectedDayPredicate: (day) {
+                        return isSameDay(_selectedDay, day);
+                      },
+                      onDaySelected: (selectedDay, focusedDay) {
+                        _showDayDetailsPopup(context, selectedDay);
+                        if (!isSameDay(_selectedDay, selectedDay)) {
+                          setState(() {
+                            _selectedDay = selectedDay;
+                            _focusedDay = focusedDay;
+                          });
+                        } else {
+                           if (!isSameDay(_focusedDay, focusedDay)) {
+                              setState(() { _focusedDay = focusedDay; });
+                           }
+                        }
+                      },
+                      onPageChanged: (focusedDay) {
+                        _focusedDay = focusedDay;
+                        // Don't necessarily change selected day on page change
+                      },
+                      onFormatChanged: (format) {
+                        if (_calendarFormat != format) {
+                          setState(() { _calendarFormat = format; });
+                        }
+                      },
+                      // --- Event Loading ---
+                       eventLoader: (day) => _getEventsForDay(context, day),
+                       // --- Calendar Styling ---
+                       calendarStyle: CalendarStyle(
+                         // Use theme colors
+                         todayDecoration: BoxDecoration(
+                           color: theme.colorScheme.primaryContainer.withOpacity(0.5),
+                           shape: BoxShape.circle,
                          ),
-                       );
-                     },
-                     separatorBuilder: (context, index) => const Divider(height: 1, indent: 16, endIndent: 16),
+                         selectedDecoration: BoxDecoration(
+                           color: theme.colorScheme.primary,
+                           shape: BoxShape.circle,
+                         ),
+                         markerDecoration: BoxDecoration(
+                           color: theme.colorScheme.secondary.withOpacity(0.7),
+                           shape: BoxShape.circle,
+                         ),
+                          // markerSize: 5.0,
+                         // markersMaxCount: 1, // Simplified marker display
+                         outsideDaysVisible: false,
+                         weekendTextStyle: TextStyle(color: theme.colorScheme.tertiary), // Example: Different color for weekends
+                         // isTodayHighlighted: true,
+                         // selectedTextStyle: TextStyle(color: theme.colorScheme.onPrimary),
+                         // todayTextStyle: TextStyle(color: theme.colorScheme.onPrimaryContainer),
+                         // defaultTextStyle: TextStyle(color: theme.colorScheme.onSurface),
+                         // weekendTextStyle: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.7)),
+                         // outsideTextStyle: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.4)),
+                         canMarkersOverflow: false, // Prevent markers going outside cell
+                       ),
+                       headerStyle: HeaderStyle(
+                         titleCentered: true,
+                         formatButtonVisible: true, // Show Week/Month toggle
+                         formatButtonShowsNext: false,
+                         titleTextStyle: textTheme.titleMedium ?? const TextStyle(),
+                         formatButtonTextStyle: TextStyle(color: theme.colorScheme.onPrimary),
+                         formatButtonDecoration: BoxDecoration(
+                           color: theme.colorScheme.primary.withOpacity(0.8),
+                           borderRadius: BorderRadius.circular(12.0),
+                         ),
+                         leftChevronIcon: Icon(Icons.chevron_left, color: theme.colorScheme.onSurface),
+                         rightChevronIcon: Icon(Icons.chevron_right, color: theme.colorScheme.onSurface),
+                       ),
+                      daysOfWeekStyle: DaysOfWeekStyle(
+                         weekdayStyle: TextStyle(color: theme.colorScheme.onSurfaceVariant),
+                         weekendStyle: TextStyle(color: theme.colorScheme.tertiary), // Consistent weekend color
+                      ),
                    ),
                  ),
                ),
-
-           const SizedBox(height: 24.0),
-           Text("Stats", style: textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold)),
-           const SizedBox(height: 12.0),
-           Card(
-             elevation: 0.5, // Lower elevation
-             child: Padding(
-               padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0), // Adjusted padding
-               child: Row( // Use Row for horizontal layout
-                 mainAxisAlignment: MainAxisAlignment.spaceBetween, // Space out elements
-                 children: [
-                    const Row( // Group icon and label
-                     children: [
-                       Icon(Icons.task_alt, color: Colors.green),
-                       SizedBox(width: 8),
-                       Text('Tasks Completed:'),
-                     ],
-                   ),
-                   Text(
-                     '$completedTasks / $totalTasks',
-                     style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
-                   ),
-                  // Add more stats later (e.g., streak)
-                 ],
-               ),
              ),
            ),
+           const SizedBox(height: 24.0),
 
+          // --- Activity Overview / Charts Section ---
+          _buildSectionTitle(context, "Activity Overview"),
+          Column(
+             children: [
+               Card(
+                 elevation: 0.5,
+                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.0)),
+                 child: Padding(
+                   padding: const EdgeInsets.all(16.0),
+                   child: Column(
+                     crossAxisAlignment: CrossAxisAlignment.start,
+                     children: [
+                       Text("Completed (Last 7 Days)", style: textTheme.titleMedium),
+                       const SizedBox(height: 16.0),
+                       SizedBox(
+                         height: 180, // Fixed height for the chart
+                         width: double.infinity, // Add width constraint
+                         child: _buildWeeklyCompletionChart(context, tasks),
+                       ),
+                     ],
+                   ),
+                 ),
+               ),
+               const SizedBox(height: 16.0), // Space between charts
+               Card(
+                 elevation: 0.5,
+                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.0)),
+                 child: Padding(
+                   padding: const EdgeInsets.all(16.0),
+                   child: Column(
+                     crossAxisAlignment: CrossAxisAlignment.start,
+                     children: [
+                       Text("Task Status", style: textTheme.titleMedium),
+                       const SizedBox(height: 16.0),
+                       SizedBox(
+                         height: 180, // Fixed height for the chart
+                         width: double.infinity, // Add width constraint
+                         child: _buildTaskStatusPieChart(context, _taskStatusDataCache ?? {}),
+                       ),
+                     ],
+                   ),
+                 ),
+               ),
+             ],
+           ),
+           const SizedBox(height: 24.0),
+
+
+          // --- Course Progress Section ---
+          _buildSectionTitle(context, "Course Progress"),
+          if (widget.courses.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 16.0),
+              child: Center(child: Text("No courses added yet.", style: textTheme.bodyMedium)),
+            )
+          else
+            ...widget.courses.map((course) => _buildCourseProgressIndicator(context, course, tasks)),
+
+          const SizedBox(height: 60), // Add padding at the bottom
         ],
       ),
     );
@@ -436,263 +692,354 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
 
   // --- Helper Widgets ---
 
-  // Updated Summary Card to be tappable and fill horizontal space
-  Widget _buildSummaryCard(BuildContext context, String title, String value, IconData icon, {Color? valueColor}) {
-    final theme = Theme.of(context);
-    final textTheme = theme.textTheme;
+  // Helper for Section Titles
+  Widget _buildSectionTitle(BuildContext context, String title) {
+     return Padding(
+       padding: const EdgeInsets.only(bottom: 12.0),
+       child: Text(
+         title,
+         style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
+       ),
+     );
+  }
 
-    // Calculate width for two cards per row
-    final screenWidth = MediaQuery.of(context).size.width;
-    final horizontalPadding = 16.0 * 2; // Padding of the parent ListView
-    final wrapSpacing = 12.0; // Spacing defined in the Wrap widget
-    final cardWidth = (screenWidth - horizontalPadding - wrapSpacing) / 2;
-
-    // Update filter logic calls to pass context
-    List<Task>? filteredTasks;
-    String screenTitle = 'Tasks';
-    TaskFilter taskFilter = TaskFilter.all; // Default filter
-
-    VoidCallback? onTapAction;
-    bool isTaskCard = false; // Flag to identify task-related cards
-
-    if (title == 'Tasks Due Today') {
-      filteredTasks = _getTasksDueToday(context);
-      screenTitle = 'Tasks Due Today';
-      taskFilter = TaskFilter.dueToday;
-      isTaskCard = true;
-    } else if (title == 'Due This Week') {
-      filteredTasks = _getTasksDueThisWeek(context);
-      screenTitle = 'Tasks Due This Week';
-      taskFilter = TaskFilter.dueThisWeek;
-      isTaskCard = true;
-    } else if (title == 'Overdue Tasks') {
-      filteredTasks = _getOverdueTasks(context);
-      screenTitle = 'Overdue Tasks';
-      taskFilter = TaskFilter.overdue;
-      isTaskCard = true;
-    } // Add cases for other potential tappable cards here (e.g., Courses Active -> CourseListScreen)
-    // else if (title == 'Courses Active') {
-    //   // Define action if needed
-    // }
-
-    // Determine if the card should be tappable
-    bool allowTap = false;
-    if (isTaskCard) {
-      // Only allow tap if the filtered task list is not empty
-      allowTap = filteredTasks != null && filteredTasks.isNotEmpty;
-    } else {
-      // Allow tap for non-task cards if an action is defined (currently none for 'Courses Active')
-      allowTap = false; // Set to true if you add an action for non-task cards
-      // Example: if (title == 'Courses Active') { allowTap = true; /* Define onTapAction below */ }
-    }
-
-    // Define the onTap action *only* if tapping is allowed
-    if (allowTap) {
-      // Keep the existing navigation logic for task cards
-       if (isTaskCard) {
-          onTapAction = () {
-            Navigator.of(context).push(
-              CupertinoPageRoute(
-                builder: (ctx) => TaskListScreen(
-                  filter: taskFilter,
-                  appBarTitle: screenTitle,
-                  courses: widget.courses,
-                ),
-              ),
-            );
-          };
-       } else {
-          // Define actions for other tappable cards here if needed
-          // Example:
-          // if (title == 'Courses Active') {
-          //   onTapAction = () { Navigator.of(context).push(...); };
-          // }
-       }
-    }
-
-    return SizedBox(
-      width: cardWidth,
-      child: InkWell(
-        onTap: allowTap ? onTapAction : null, // Only enable onTap if allowTap is true
-        borderRadius: BorderRadius.circular(12.0),
-        child: Card(
+  // Helper for Summary Cards
+  Widget _buildSummaryCard(BuildContext context, String title, String value, IconData icon, {Color? valueColor, VoidCallback? onTap}) {
+     final theme = Theme.of(context);
+     return SizedBox(
+       width: 160, // Fixed width for all cards
+       height: 100, // Fixed height for all cards
+       child: Card(
           elevation: 0.5,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.0)),
-          color: allowTap ? null : Theme.of(context).disabledColor.withOpacity(0.05), // Optional: Dim non-tappable cards
-          child: Padding(
+          child: InkWell(
+             onTap: onTap,
+             borderRadius: BorderRadius.circular(12.0),
+             child: Padding(
+               padding: const EdgeInsets.all(16.0),
+               child: Column(
+                 crossAxisAlignment: CrossAxisAlignment.start,
+                 mainAxisAlignment: MainAxisAlignment.spaceBetween, // Space elements evenly
+                 children: [
+                   Row(
+                     mainAxisSize: MainAxisSize.min,
+                     children: [
+                        Icon(icon, size: 18, color: theme.colorScheme.primary),
+                        const SizedBox(width: 8),
+                        Flexible(
+                          child: Text(
+                            title,
+                            style: theme.textTheme.titleSmall,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                     ],
+                   ),
+                   Text(
+                     value,
+                     style: theme.textTheme.headlineMedium?.copyWith(
+                       fontWeight: FontWeight.bold,
+                       color: valueColor ?? theme.colorScheme.onSurface
+                     ),
+                   ),
+                 ],
+               ),
+             ),
+          ),
+       ),
+     );
+  }
+
+   // Helper for Agenda Cards
+   Widget _buildAgendaCard(BuildContext context, AgendaItem item) {
+       final theme = Theme.of(context);
+       final textTheme = theme.textTheme;
+       return SizedBox(
+           width: 160, // Fixed width for horizontal scrolling cards
+           child: Card(
+               elevation: 0.5,
+               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.0)),
+               margin: const EdgeInsets.only(right: 12.0), // Space between cards
+               child: InkWell(
+                   onTap: () {
+                     // Find the course and navigate to its detail screen
+                     final course = widget.courses.firstWhere(
+                       (c) => c.name == item.courseName,
+                       orElse: () => widget.courses.first,
+                     );
+                     Navigator.push(
+                       context,
+                       CupertinoPageRoute(
+                         builder: (_) => CourseDetailScreen(
+                           course: course,
+                           onEditCourse: widget.onEditCourse,
+                         ),
+                       ),
+                     );
+                   },
+                   borderRadius: BorderRadius.circular(12.0),
+                   child: Padding(
+                       padding: const EdgeInsets.all(12.0),
+                       child: Column(
+                           crossAxisAlignment: CrossAxisAlignment.start,
+                           mainAxisAlignment: MainAxisAlignment.center,
+                           children: [
+                               Text(
+                                   item.courseName,
+                                   style: textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+                                   overflow: TextOverflow.ellipsis,
+                               ),
+                               const SizedBox(height: 4),
+                               Row(
+                                  children: [
+                                     Icon(Icons.access_time, size: 14, color: theme.colorScheme.secondary),
+                                     const SizedBox(width: 4),
+                                     Text(item.timeOfDay.format(context), style: textTheme.bodySmall),
+                                  ],
+                               ),
+                           ],
+                       ),
+                   ),
+               ),
+           ),
+       );
+   }
+
+  // Helper for Course Progress Indicator
+  Widget _buildCourseProgressIndicator(BuildContext context, Course course, List<Task> allTasks) {
+    final theme = Theme.of(context);
+    final textTheme = theme.textTheme;
+    final courseTasks = allTasks.where((task) => task.courseId == course.id).toList();
+    final completedTasks = courseTasks.where((task) => task.isComplete).length;
+    final progress = courseTasks.isEmpty ? 0.0 : completedTasks / courseTasks.length;
+
+     // Find the next due task for this course
+    Task? nextDueTask;
+    DateTime? nextDueDate;
+    final now = DateTime.now();
+    for (final task in courseTasks) {
+      if (!task.isComplete && task.dueDate != null && task.dueDate!.isAfter(now)) {
+        if (nextDueDate == null || task.dueDate!.isBefore(nextDueDate)) {
+          nextDueDate = task.dueDate;
+          nextDueTask = task;
+        }
+      }
+    }
+
+
+    return Card(
+      elevation: 0.5,
+      margin: const EdgeInsets.only(bottom: 12.0),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.0)),
+      child: InkWell(
+          onTap: () {
+            Navigator.push(context, CupertinoPageRoute(
+               builder: (_) => CourseDetailScreen(course: course, onEditCourse: widget.onEditCourse)
+            ));
+          },
+          borderRadius: BorderRadius.circular(12.0),
+         child: Padding(
             padding: const EdgeInsets.all(16.0),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min, // Fit content vertically
               children: [
-                Icon(icon, size: 28.0, color: theme.colorScheme.primary),
-                const SizedBox(height: 8.0),
-                Text(title, style: textTheme.bodyMedium),
-                const SizedBox(height: 4.0),
-                Text(
-                  value,
-                  style: textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: valueColor ?? theme.colorScheme.onSurface, // Use provided color or default
-                  ),
+                Row(
+                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                   children: [
+                     Flexible(
+                        child: Text(course.name, style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold), overflow: TextOverflow.ellipsis),
+                     ),
+                      Text(
+                         '${(progress * 100).toStringAsFixed(0)}%',
+                         style: textTheme.titleSmall?.copyWith(color: theme.colorScheme.primary, fontWeight: FontWeight.bold),
+                       ),
+                   ],
                 ),
+                const SizedBox(height: 8.0),
+                LinearProgressIndicator(
+                  value: progress,
+                  backgroundColor: theme.colorScheme.surfaceContainerHighest,
+                  color: course.colorValue, // Use course color
+                  minHeight: 6,
+                  borderRadius: BorderRadius.circular(3),
+                ),
+                const SizedBox(height: 8.0),
+                // Show next due task info
+                 if (nextDueTask != null && nextDueDate != null)
+                   Row(
+                      children: [
+                         Icon(Icons.arrow_forward, size: 14, color: theme.colorScheme.secondary),
+                         const SizedBox(width: 4),
+                         Expanded(
+                           child: Text(
+                              'Next: ${nextDueTask.title} (Due ${DateFormat.Md().format(nextDueDate)})',
+                              style: textTheme.bodySmall,
+                              overflow: TextOverflow.ellipsis,
+                           ),
+                         ),
+                      ],
+                   )
+                 else if (courseTasks.isNotEmpty && progress == 1.0)
+                   Row(
+                     children: [
+                        Icon(Icons.check_circle, size: 14, color: Colors.green[700]),
+                        const SizedBox(width: 4),
+                        Text('All tasks complete!', style: textTheme.bodySmall),
+                     ],
+                   )
+                  else if (courseTasks.isEmpty)
+                     Text('No tasks added for this course.', style: textTheme.bodySmall),
               ],
             ),
           ),
-        ),
-      ),
+       ),
     );
   }
 
-  // --- Function to show day details pop-up with Swiping ---
-  void _showDayDetailsPopup(BuildContext buildContext, DateTime initialSelectedDate) {
-     // Calculate initial page index based on a reasonable range (e.g., 1 year back, 1 year forward)
-     final today = DateTime.now();
-     final rangeStart = DateTime(today.year - 1, today.month, today.day);
-     final initialPageIndex = initialSelectedDate.difference(rangeStart).inDays;
+   // --- Popup for Day Details ---
+   void _showDayDetailsPopup(BuildContext context, DateTime selectedDay) {
+     final tasksProvider = Provider.of<TasksProvider>(context, listen: false);
+     final tasks = tasksProvider.tasks;
+     final settings = Provider.of<SettingsProvider>(context, listen: false);
 
-     _detailsPageController = PageController(initialPage: initialPageIndex);
+     final dayOfWeek = DayOfWeek.values[selectedDay.weekday - 1];
+     final coursesOnDay = widget.courses.where((c) {
+        return c.schedule.any((entry) => entry.day == dayOfWeek);
+      }).toList();
+     // Sort courses by scheduled time on that day
+     coursesOnDay.sort((a, b) {
+       final timeA = a.schedule.firstWhere((e) => e.day == dayOfWeek).time;
+       final timeB = b.schedule.firstWhere((e) => e.day == dayOfWeek).time;
+       final totalMinutesA = timeA.hour * 60 + timeA.minute;
+       final totalMinutesB = timeB.hour * 60 + timeB.minute;
+       return totalMinutesA.compareTo(totalMinutesB);
+     });
 
-    showModalBottomSheet(
-      context: buildContext, // Use passed context
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (ctx) {
-        // Use a stateful builder to manage the currently displayed date in the PageView
-        DateTime currentPageDate = initialSelectedDate;
+     final tasksDueOnDay = tasks.where((t) => t.dueDate != null && isSameDay(t.dueDate!, selectedDay)).toList();
+     // Sort tasks due today by completion status (incomplete first), then title
+     tasksDueOnDay.sort((a, b) {
+        if (a.isComplete != b.isComplete) {
+           return a.isComplete ? 1 : -1; // Incomplete first
+        }
+        return a.title.compareTo(b.title);
+     });
 
-        return StatefulBuilder( // Add StatefulBuilder to manage currentPageDate
-          builder: (modalContext, setModalState) {
+      // No need to show popup if nothing is scheduled or due
+      if (coursesOnDay.isEmpty && tasksDueOnDay.isEmpty) {
+         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('Nothing scheduled or due on ${DateFormat.yMMMd().format(selectedDay)}.'),
+            duration: const Duration(seconds: 2),
+            behavior: SnackBarBehavior.floating,
+         ));
+         return;
+      }
+
+     showModalBottomSheet(
+       context: context,
+       isScrollControlled: true, // Allow taller sheet
+       shape: const RoundedRectangleBorder(
+         borderRadius: BorderRadius.vertical(top: Radius.circular(20.0)),
+       ),
+       builder: (ctx) {
+         final theme = Theme.of(ctx);
+         return StatefulBuilder( // Add StatefulBuilder to handle state updates
+           builder: (context, setState) {
              return DraggableScrollableSheet(
                expand: false,
-               initialChildSize: 0.4, // Start at 40% height
-               minChildSize: 0.2,   // Allow shrinking to 20%
-               maxChildSize: 0.6,   // Allow expanding to 60%
-               builder: (_, scrollController) {
-                 return PageView.builder(
-                    controller: _detailsPageController,
-                    onPageChanged: (index) {
-                      // Update the date when the page changes
-                      final newDate = rangeStart.add(Duration(days: index));
-                      setModalState(() {
-                         currentPageDate = newDate;
-                      });
-                      // Update the main calendar focus/selection if desired
-                      // This requires passing a callback or using provider if state needs to lift up
-                       if (mounted) { // Check if DashboardScreen state is mounted
-                         setState(() {
-                            _selectedDay = newDate;
-                            _focusedDay = newDate;
-                         });
-                       }
-                    },
-                    itemBuilder: (pageCtx, pageIndex) {
-                       // Calculate the date for the current page
-                       final dateForPage = rangeStart.add(Duration(days: pageIndex));
-                       // Pass the correct context (modalContext or pageCtx) to content builder
-                       return _buildDayDetailsContent(pageCtx, dateForPage, scrollController);
-                    },
+               initialChildSize: 0.4,
+               minChildSize: 0.3,
+               maxChildSize: 0.7,
+               builder: (_, controller) {
+                 return Container(
+                   padding: const EdgeInsets.all(16.0),
+                   child: ListView(
+                     controller: controller,
+                     children: [
+                       Center(
+                          child: Container(
+                             height: 5,
+                             width: 40,
+                             decoration: BoxDecoration(
+                               color: theme.dividerColor,
+                               borderRadius: BorderRadius.circular(10),
+                             ),
+                           ),
+                        ),
+                       const SizedBox(height: 16),
+                       Text(
+                         DateFormat.yMMMEd().format(selectedDay),
+                         style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
+                         textAlign: TextAlign.center,
+                       ),
+                       const SizedBox(height: 16),
+
+                       if (coursesOnDay.isNotEmpty)
+                         Text('Scheduled Courses', style: theme.textTheme.titleMedium),
+                       if (coursesOnDay.isNotEmpty)
+                         ...coursesOnDay.map((course) {
+                           final entry = course.schedule.firstWhere((e) => e.day == dayOfWeek);
+                           return ListTile(
+                             leading: Icon(Icons.class_outlined, color: course.colorValue),
+                             title: Text(course.name),
+                             trailing: Text(entry.time.format(ctx)),
+                              dense: true,
+                              visualDensity: VisualDensity.compact,
+                           );
+                         }),
+                       if (coursesOnDay.isNotEmpty)
+                          const SizedBox(height: 16),
+
+                       if (tasksDueOnDay.isNotEmpty)
+                         Text('Tasks Due', style: theme.textTheme.titleMedium),
+                       if (tasksDueOnDay.isNotEmpty)
+                          ...tasksDueOnDay.map((task) {
+                           final courseName = widget.courses.firstWhereOrNull((c) => c.id == task.courseId)?.name;
+                           return ListTile(
+                             leading: InkWell(
+                               onTap: () async {
+                                 // Toggle task completion
+                                 final updatedTask = task.copyWith(
+                                   isComplete: !task.isComplete,
+                                   completedAt: () => !task.isComplete ? DateTime.now() : null,
+                                 );
+                                 await tasksProvider.editTask(updatedTask);
+                                 // Update local state to show change immediately
+                                 setState(() {});
+                                 // Trigger rebuild of parent widget to update charts and stats
+                                 if (mounted) {
+                                   this.setState(() {});
+                                 }
+                               },
+                               child: AnimatedSwitcher(
+                                 duration: const Duration(milliseconds: 200),
+                                 child: Icon(
+                                   task.isComplete ? Icons.check_box : Icons.check_box_outline_blank,
+                                   color: task.isComplete ? Colors.green : theme.colorScheme.primary,
+                                   size: 20,
+                                   key: ValueKey(task.isComplete), // Key for animation
+                                 ),
+                               ),
+                             ),
+                             title: Text(
+                                task.title,
+                                style: task.isComplete ? TextStyle(
+                                  decoration: TextDecoration.lineThrough,
+                                  color: theme.disabledColor
+                                ) : null,
+                             ),
+                             subtitle: courseName != null ? Text(courseName) : null,
+                             dense: true,
+                             visualDensity: VisualDensity.compact,
+                           );
+                         }),
+                     ],
+                   ),
                  );
-               }
-            );
-          }
-        );
-      },
-    ).whenComplete(() {
-      _detailsPageController?.dispose();
-      _detailsPageController = null;
-    });
-  }
-
-  // Helper widget to build the actual content for a given day in the popup
-  Widget _buildDayDetailsContent(BuildContext context, DateTime selectedDate, ScrollController scrollController) {
-    final theme = Theme.of(context);
-    final textTheme = theme.textTheme;
-    // Use Consumer or Provider.of to get tasks and listen for changes
-    final tasksProvider = Provider.of<TasksProvider>(context);
-    final allTasks = tasksProvider.tasks;
-
-    // Filter tasks for the selected date using the latest data
-    final tasksDueOnDay = allTasks.where((task) {
-      return task.dueDate != null && isSameDay(task.dueDate!, selectedDate);
-    }).toList();
-
-    // Calculate time logged based on currently filtered tasks
-    Duration currentTotalTimeLoggedForDay = Duration.zero;
-    for (var task in tasksDueOnDay) {
-      currentTotalTimeLoggedForDay += task.totalTimeSpent;
-    }
-    final currentTimeLoggedString = '${currentTotalTimeLoggedForDay.inHours}h ${currentTotalTimeLoggedForDay.inMinutes.remainder(60)}m';
-
-    // Removed outer StatefulBuilder as Provider handles updates
-    return Container(
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Header
-          Center(
-            child: Text(
-              DateFormat.yMMMEd().format(selectedDate),
-              style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Center(
-            child: Container(
-              width: 40, height: 4,
-              decoration: BoxDecoration(
-                  color: Colors.grey[300],
-                  borderRadius: BorderRadius.circular(10)
-              )
-            ),
-          ),
-          const SizedBox(height: 20),
-
-          // Time Logged Section
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text('Time Logged (for tasks due): ', style: textTheme.titleMedium),
-              Text(currentTimeLoggedString, style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
-            ],
-          ),
-          const Divider(height: 24),
-
-          // Tasks Due Section
-          Text('Tasks Due:', style: textTheme.titleMedium),
-          const SizedBox(height: 8),
-          Expanded(
-            child: tasksDueOnDay.isEmpty
-                ? const Center(child: Text('No tasks due on this day.'))
-                : ListView.builder(
-                    controller: scrollController,
-                    itemCount: tasksDueOnDay.length,
-                    itemBuilder: (listCtx, index) {
-                      final task = tasksDueOnDay[index];
-                      return CheckboxListTile(
-                        title: Text(task.title,
-                              style: task.isComplete
-                                  ? const TextStyle(decoration: TextDecoration.lineThrough, color: Colors.grey)
-                                  : null),
-                        value: task.isComplete,
-                        onChanged: (_) {
-                          // Call provider method directly
-                          tasksProvider.toggleTaskComplete(task.id);
-                          // No need for setPageContentState here - Provider handles notification
-                        },
-                        dense: true,
-                        controlAffinity: ListTileControlAffinity.leading,
-                      );
-                    },
-                  ),
-          ),
-          // --- TODO: Add completed tasks section later ---
-        ],
-      ),
-    );
-  }
+               },
+             );
+           }
+         );
+       },
+     );
+   }
 } 

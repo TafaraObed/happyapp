@@ -3,6 +3,7 @@ import 'package:flutter/services.dart'; // Import for InputFormatters
 import '../models/course.dart'; // Assuming models folder is one level up
 import '../models/schedule_entry.dart'; // Import ScheduleEntry
 import 'package:uuid/uuid.dart'; // For generating unique IDs
+import 'predefined_courses_screen.dart'; // Import the new screen
 
 class AddCourseScreen extends StatefulWidget {
   final Course? initialCourse; // Optional course for editing
@@ -131,6 +132,18 @@ class _AddCourseScreenState extends State<AddCourseScreen> {
     }
   }
 
+  // --- Predefined Course Selection ---
+  Future<void> _selectPredefinedCourse() async {
+    final predefinedCourse = await Navigator.of(context).push<Course>(
+      MaterialPageRoute(builder: (ctx) => const PredefinedCoursesScreen()),
+    );
+    
+    if (predefinedCourse != null) {
+      // Return the predefined course to the caller
+      Navigator.of(context).pop(predefinedCourse);
+    }
+  }
+
   // --- Schedule Entry Management ---
 
   Future<void> _pickTime() async {
@@ -187,6 +200,66 @@ class _AddCourseScreenState extends State<AddCourseScreen> {
           key: _formKey,
           child: ListView( // Use ListView for scrollability if content overflows
             children: <Widget>[
+              // Option to select from predefined courses (only for new courses)
+              if (!_isEditing) ...[
+                Card(
+                  elevation: 2,
+                  margin: const EdgeInsets.only(bottom: 24.0),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12.0),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.auto_awesome,
+                              color: Theme.of(context).colorScheme.primary,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Quick Add Predefined Course',
+                              style: Theme.of(context).textTheme.titleMedium,
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        const Text(
+                          'Select from our collection of predefined courses with ready-to-use tasks.',
+                          style: TextStyle(fontSize: 14),
+                        ),
+                        const SizedBox(height: 16),
+                        Center(
+                          child: ElevatedButton.icon(
+                            icon: const Icon(Icons.list_alt),
+                            label: const Text('Browse Predefined Courses'),
+                            onPressed: _selectPredefinedCourse,
+                            style: ElevatedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 12,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const Divider(height: 32),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 16.0),
+                  child: Text(
+                    'Or Create Your Own Course',
+                    style: Theme.of(context).textTheme.titleMedium,
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              ],
+              // Manual course creation form
               TextFormField(
                 controller: _nameController,
                 decoration: const InputDecoration(

@@ -1,70 +1,70 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:table_calendar/table_calendar.dart'; // Import for StartingDayOfWeek enum
+import 'dart:convert';
 
 class SettingsProvider with ChangeNotifier {
-  static const String _startDayPrefKey = 'start_day_of_week';
+  static const String _startingDayKey = 'starting_day_of_week';
+  static const String _notificationsEnabledKey = 'notifications_enabled';
+  static const String _taskRemindersEnabledKey = 'task_reminders_enabled';
+  static const String _classRemindersEnabledKey = 'class_reminders_enabled';
   static const String _termStartPrefKey = 'term_start_date'; // Key for term start
   static const String _termEndPrefKey = 'term_end_date'; // Key for term end
-  static const String _taskRemindersKey = 'task_reminders_enabled'; // New Key
-  static const String _classRemindersKey = 'class_reminders_enabled'; // New Key
+  static const String _userProfileKey = 'user_profile';
 
   // Default to Monday
   StartingDayOfWeek _startingDayOfWeek = StartingDayOfWeek.monday;
   DateTime? _termStartDate; // State for term start date
   DateTime? _termEndDate; // State for term end date
-  bool _taskRemindersEnabled = true; // Default to true
-  bool _classRemindersEnabled = true; // Default to true
+  bool _notificationsEnabled = true;
+  bool _taskRemindersEnabled = true;
+  bool _classRemindersEnabled = true;
+
+  // User profile data
+  String? _profilePicture;
+  String? _displayName;
 
   SettingsProvider() {
-    _loadPreferences(); // Load all prefs
+    _loadSettings();
   }
 
+  // Getters
   StartingDayOfWeek get startingDayOfWeek => _startingDayOfWeek;
   DateTime? get termStartDate => _termStartDate; // Getter
   DateTime? get termEndDate => _termEndDate; // Getter
-  bool get taskRemindersEnabled => _taskRemindersEnabled; // New Getter
-  bool get classRemindersEnabled => _classRemindersEnabled; // New Getter
+  bool get notificationsEnabled => _notificationsEnabled;
+  bool get taskRemindersEnabled => _taskRemindersEnabled;
+  bool get classRemindersEnabled => _classRemindersEnabled;
+  String? get profilePicture => _profilePicture;
+  String? get displayName => _displayName;
 
-  Future<void> _loadPreferences() async {
-    final prefs = await SharedPreferences.getInstance();
-    
-    // Load Start Day
-    final dayIndex = prefs.getInt(_startDayPrefKey) ?? StartingDayOfWeek.monday.index;
-    if (dayIndex >= 0 && dayIndex < StartingDayOfWeek.values.length) {
-       _startingDayOfWeek = StartingDayOfWeek.values[dayIndex];
-    } else {
-      // Handle potential corrupted data, default to Monday
-      _startingDayOfWeek = StartingDayOfWeek.monday; 
-    }
-
-    // Load Term Start Date
-    final termStartString = prefs.getString(_termStartPrefKey);
-    if (termStartString != null) {
-        _termStartDate = DateTime.tryParse(termStartString);
-    }
-
-    // Load Term End Date
-    final termEndString = prefs.getString(_termEndPrefKey);
-     if (termEndString != null) {
-        _termEndDate = DateTime.tryParse(termEndString);
-    }
-
-    // Load Notification Prefs
-    _taskRemindersEnabled = prefs.getBool(_taskRemindersKey) ?? true; // Default true if not found
-    _classRemindersEnabled = prefs.getBool(_classRemindersKey) ?? true; // Default true if not found
-
+  // Setters
+  Future<void> setStartingDayOfWeek(StartingDayOfWeek value) async {
+    _startingDayOfWeek = value;
     notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_startingDayKey, value.index);
   }
 
-  Future<void> setStartingDayOfWeek(StartingDayOfWeek day) async {
-    if (_startingDayOfWeek == day) return;
-
-    _startingDayOfWeek = day;
+  Future<void> setNotificationsEnabled(bool value) async {
+    _notificationsEnabled = value;
     notifyListeners();
-
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt(_startDayPrefKey, day.index);
+    await prefs.setBool(_notificationsEnabledKey, value);
+  }
+
+  Future<void> setTaskRemindersEnabled(bool value) async {
+    _taskRemindersEnabled = value;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_taskRemindersEnabledKey, value);
+  }
+
+  Future<void> setClassRemindersEnabled(bool value) async {
+    _classRemindersEnabled = value;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_classRemindersEnabledKey, value);
   }
 
   // Method to set Term Start Date
@@ -93,20 +93,67 @@ class SettingsProvider with ChangeNotifier {
      notifyListeners();
   }
 
-  // Setters for Notifications
-  Future<void> setTaskRemindersEnabled(bool enabled) async {
-    if (_taskRemindersEnabled == enabled) return;
-    _taskRemindersEnabled = enabled;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_taskRemindersKey, enabled);
+  // Profile management methods
+  Future<void> updateProfilePicture(String base64Image) async {
+    _profilePicture = base64Image;
+    await _saveUserProfile();
     notifyListeners();
   }
 
-   Future<void> setClassRemindersEnabled(bool enabled) async {
-    if (_classRemindersEnabled == enabled) return;
-    _classRemindersEnabled = enabled;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_classRemindersKey, enabled);
+  Future<void> updateDisplayName(String name) async {
+    _displayName = name;
+    await _saveUserProfile();
     notifyListeners();
+  }
+
+  Future<void> _saveUserProfile() async {
+    final prefs = await SharedPreferences.getInstance();
+    final profileData = {
+      'profilePicture': _profilePicture,
+      'displayName': _displayName,
+    };
+    await prefs.setString(_userProfileKey, jsonEncode(profileData));
+  }
+
+  // Load settings from SharedPreferences
+  Future<void> _loadSettings() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      
+      // Load starting day of week
+      final startingDayIndex = prefs.getInt(_startingDayKey);
+      if (startingDayIndex != null) {
+        _startingDayOfWeek = StartingDayOfWeek.values[startingDayIndex];
+      }
+
+      // Load notification settings
+      _notificationsEnabled = prefs.getBool(_notificationsEnabledKey) ?? true;
+      _taskRemindersEnabled = prefs.getBool(_taskRemindersEnabledKey) ?? true;
+      _classRemindersEnabled = prefs.getBool(_classRemindersEnabledKey) ?? true;
+
+      // Load Term Start Date
+      final termStartString = prefs.getString(_termStartPrefKey);
+      if (termStartString != null) {
+          _termStartDate = DateTime.tryParse(termStartString);
+      }
+
+      // Load Term End Date
+      final termEndString = prefs.getString(_termEndPrefKey);
+       if (termEndString != null) {
+          _termEndDate = DateTime.tryParse(termEndString);
+      }
+
+      // Load user profile data
+      final profileString = prefs.getString(_userProfileKey);
+      if (profileString != null) {
+        final profileData = jsonDecode(profileString) as Map<String, dynamic>;
+        _profilePicture = profileData['profilePicture'] as String?;
+        _displayName = profileData['displayName'] as String?;
+      }
+
+      notifyListeners();
+    } catch (e) {
+      print("ERROR loading settings: $e");
+    }
   }
 } 

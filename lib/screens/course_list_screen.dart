@@ -2,11 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter/cupertino.dart'; // Import for CupertinoPageRoute
 import '../models/course.dart';
-import '../models/schedule_entry.dart';
-import 'add_course_screen.dart';
 import '../widgets/tap_scale_container.dart';
 import 'package:intl/intl.dart';
 import 'course_detail_screen.dart'; // Import the new detail screen
+import 'package:vibration/vibration.dart';  // Add vibration import
 
 // Changed to StatelessWidget and accepts data/callbacks
 class CourseListScreen extends StatelessWidget {
@@ -22,6 +21,22 @@ class CourseListScreen extends StatelessWidget {
     required this.onEdit,
     required this.onDelete,
   });
+
+  void _onCourseTap(BuildContext context, Course course) async {
+    // Vibrate when course is tapped
+    // Use a very short duration for sharper feedback
+    await Vibration.vibrate(duration: 20); 
+    
+    Navigator.push(
+      context,
+      CupertinoPageRoute(
+        builder: (_) => CourseDetailScreen(
+          course: course,
+          onEditCourse: onEdit,
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -58,15 +73,7 @@ class CourseListScreen extends StatelessWidget {
               final subtitle = subtitleParts.join('  •  ');
 
               return TapScaleContainer(
-                onTap: () {
-                   // Navigate to Course Detail Screen
-                   Navigator.of(context).push(CupertinoPageRoute(
-                     builder: (ctx) => CourseDetailScreen(
-                       course: course,
-                       onEditCourse: onEdit, // Pass the edit callback
-                     ),
-                   ));
-                },
+                onTap: () => _onCourseTap(context, course),
                 child: Card(
                   margin: const EdgeInsets.only(bottom: 8.0),
                   elevation: 0.5,
