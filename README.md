@@ -65,7 +65,7 @@ A SwiftUI inspired Flutter study planner application designed to help students o
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/yourusername/happyapp.git
+   git clone https://github.com/TafaraObed/happyapp.git
    cd happyapp
    ```
 
