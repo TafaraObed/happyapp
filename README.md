@@ -111,48 +111,72 @@ A SwiftUI inspired Flutter study planner application designed to help students o
 
 ```
 happyapp/
-├── lib/
-│   ├── helpers/
-│   │   ├── database_helper.dart        # SQLite database management
-│   │   └── database_sync_manager.dart  # Data synchronization
-│   ├── models/
-│   │   ├── course.dart                 # Course data model
-│   │   ├── predefined_programs.dart    # Predefined academic programs
-│   │   ├── program.dart                # Academic program model
-│   │   ├── schedule_entry.dart         # Schedule data model
-│   │   ├── task.dart                   # Task data model
-│   │   ├── time_log_entry.dart         # Time tracking model
-│   │   └── user.dart                   # User authentication model
-│   ├── providers/
-│   │   ├── auth_provider.dart          # Authentication state management
-│   │   ├── settings_provider.dart      # App settings management
-│   │   ├── tasks_provider.dart         # Task state management
-│   │   └── theme_provider.dart         # Theme state management
-│   ├── screens/
-│   │   ├── add_course_screen.dart      # Course creation UI
-│   │   ├── add_task_screen.dart        # Task creation UI
-│   │   ├── course_detail_screen.dart   # Course details view
-│   │   ├── course_list_screen.dart     # Course listing
-│   │   ├── dashboard_screen.dart       # Main dashboard
-│   │   ├── login_screen.dart           # Authentication UI
-│   │   ├── profile_screen.dart         # User profile 
-│   │   ├── settings_screen.dart        # App settings
-│   │   ├── signup_screen.dart          # User registration
-│   │   ├── stats_screen.dart           # Statistics and analytics
-│   │   └── task_list_screen.dart       # Task listing and management
-│   ├── services/
-│   │   └── predefined_courses_service.dart # Course template management
-│   ├── themes/                         # Theme configurations
-│   ├── utils/                          # Utility functions
-│   │   └── task_filter.dart            # Task filtering logic
-│   ├── widgets/                        # Reusable UI components
-│   │   └── tap_scale_container.dart    # Animation wrapper
-│   └── main.dart                       # Application entry point
-├── assets/
+├── lib/                              # Main source code
+│   ├── main.dart                     # Application entry point (478 lines)
+│   ├── helpers/                      # Database and utility helpers
+│   │   ├── database_helper.dart      # SQLite database management (761 lines)
+│   │   └── database_sync_manager.dart # Data synchronization (138 lines)
+│   ├── models/                       # Data models
+│   │   ├── course.dart               # Course data model (125 lines)
+│   │   ├── predefined_programs.dart  # Predefined academic programs (224 lines)
+│   │   ├── program.dart              # Academic program model (58 lines)
+│   │   ├── schedule_entry.dart       # Schedule data model (58 lines)
+│   │   ├── task.dart                 # Task data model (188 lines)
+│   │   ├── time_log_entry.dart       # Time tracking model (36 lines)
+│   │   └── user.dart                 # User authentication model (38 lines)
+│   ├── providers/                    # State management
+│   │   ├── auth_provider.dart        # Authentication state management (160 lines)
+│   │   ├── settings_provider.dart    # App settings management (159 lines)
+│   │   ├── tasks_provider.dart       # Task state management (320 lines)
+│   │   └── theme_provider.dart       # Theme state management (161 lines)
+│   ├── screens/                      # UI screens
+│   │   ├── add_course_screen.dart    # Course creation UI (450 lines)
+│   │   ├── add_task_screen.dart      # Task creation UI (306 lines)
+│   │   ├── course_detail_screen.dart # Course details view (275 lines)
+│   │   ├── course_list_screen.dart   # Course listing (135 lines)
+│   │   ├── dashboard_screen.dart     # Main dashboard (1045 lines)
+│   │   ├── login_screen.dart         # Authentication UI (294 lines)
+│   │   ├── profile_screen.dart       # User profile management (304 lines)
+│   │   ├── predefined_courses_screen.dart # Predefined courses selection (190 lines)
+│   │   ├── settings_screen.dart      # App settings (228 lines)
+│   │   ├── signup_screen.dart        # User registration (449 lines)
+│   │   ├── stats_screen.dart         # Statistics and analytics (238 lines)
+│   │   ├── task_detail_screen.dart   # Task details view (158 lines)
+│   │   ├── task_list_screen.dart     # Task listing and management (742 lines)
+│   │   └── theme_selection_screen.dart # Theme customization (127 lines)
+│   ├── services/                     # Business logic services
+│   │   ├── predefined_courses_service.dart # Course template management (75 lines)
+│   │   └── prioritization_service.dart # Task prioritization logic (69 lines)
+│   ├── themes/                       # Theme configurations
+│   │   └── app_themes.dart           # Application theme definitions (531 lines)
+│   ├── utils/                        # Utility functions
+│   │   └── task_filter.dart          # Task filtering logic (10 lines)
+│   └── widgets/                      # Reusable UI components
+│       └── tap_scale_container.dart  # Animation wrapper for UI elements (77 lines)
+├── assets/                           # Static assets
 │   └── images/
-│       ├── study_background.jpg        # Dark mode background
-│       └── study_light_background.jpg  # Light mode background
-└── [Platform-specific directories]
+│       ├── study_background.jpg      # Dark mode background
+│       └── study_light_background.jpg # Light mode background
+├── screenshots/                      # Application screenshots for documentation
+│   ├── Course_Screen.png
+│   ├── Dashboard_01.png
+│   ├── Dashboard_02.png
+│   ├── Login_screen.png
+│   ├── Profile_settings_screen.png
+│   ├── Settings_screen.png
+│   ├── Signup_screen.png
+│   ├── Stats_screen.png
+│   ├── Tasks_screen.png
+│   └── Themes.png
+├── android/                          # Android platform code
+├── ios/                              # iOS platform code
+├── web/                              # Web platform code
+├── windows/                          # Windows platform code
+├── macos/                            # macOS platform code
+├── linux/                            # Linux platform code
+├── test/                             # Testing directory
+├── pubspec.yaml                      # Project dependencies and metadata
+└── README.md                         # Project documentation
 ```
 
 ## 📊 Database Schema
