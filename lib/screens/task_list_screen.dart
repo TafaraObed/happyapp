@@ -355,10 +355,12 @@ class _TaskListScreenState extends State<TaskListScreen> { // State class
               _toggleTaskCompletion(task);
             }
           },
-          secondary: PopupMenuButton<String>(
-            icon: const Icon(Icons.more_vert),
-            onSelected: (String result) {
-              if (result == 'edit') {
+          secondary: Builder( // Wrap with Builder
+            builder: (BuildContext context) { // Use the new context
+              return PopupMenuButton<String>( // Return the PopupMenuButton
+                icon: const Icon(Icons.more_vert),
+                onSelected: (String result) {
+                  if (result == 'edit') {
                 Navigator.push(
                   context,
                   CupertinoPageRoute(
@@ -410,6 +412,8 @@ class _TaskListScreenState extends State<TaskListScreen> { // State class
                 child: ListTile(leading: Icon(Icons.delete, color: Colors.red), title: Text('Delete', style: TextStyle(color: Colors.red))),
               ),
             ],
+              ); // End of PopupMenuButton
+            } // End of Builder
           ),
           controlAffinity: ListTileControlAffinity.leading,
           activeColor: Theme.of(context).colorScheme.primary,
@@ -718,4 +722,4 @@ extension StringExtension on String {
       if (isEmpty) return "";
       return "${this[0].toUpperCase()}${substring(1).toLowerCase()}";
     }
-} 
+}
