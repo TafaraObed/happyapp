@@ -279,7 +279,7 @@ Please adhere to Flutter best practices and ensure tests pass.
 
 MIT License
 
-Copyright (c) 2023 [Your Name or Organization]
+Copyright (c) 2023 HappyApp Co.
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
