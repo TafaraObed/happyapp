@@ -30,7 +30,35 @@ A SwiftUI inspired Flutter study planner application designed to help students o
 
 ## 📱 Screenshots
 
-*[Add screenshots of your application here showing the dashboard, courses, tasks, and calendar screens]*
+### Dashboard
+<p float="left">
+  <img src="screenshots/Dashboard_01.png" width="400" />
+  <img src="screenshots/Dashboard_02.png" width="400" />
+</p>
+
+### Authentication
+<p float="left">
+  <img src="screenshots/Login_screen.png" width="400" />
+  <img src="screenshots/Signup_screen.png" width="400" />
+</p>
+
+### Main Screens
+<p float="left">
+  <img src="screenshots/Course_Screen.png" width="400" />
+  <img src="screenshots/Tasks_screen.png" width="400" />
+</p>
+
+### Analytics and Settings
+<p float="left">
+  <img src="screenshots/Stats_screen.png" width="400" />
+  <img src="screenshots/Settings_screen.png" width="400" />
+</p>
+
+### User and Themes
+<p float="left">
+  <img src="screenshots/Profile_settings_screen.png" width="400" />
+  <img src="screenshots/Themes.png" width="400" />
+</p>
 
 ## 🛠️ Technology Stack
 
