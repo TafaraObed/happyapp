@@ -1,4 +1,3 @@
-import 'package:flutter/material.dart';
 
 // Enum to define the different ways tasks can be filtered in TaskListScreen
 enum TaskFilter {
